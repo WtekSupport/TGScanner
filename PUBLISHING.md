@@ -65,8 +65,9 @@ git push -u origin main
 
 Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 
-- Builds **release** on Windows, Linux, macOS (`cargo build --release --locked`)
-- Uploads artifacts: `tgscanner-windows-x86_64`, `tgscanner-linux-x86_64`, `tgscanner-macos-universal`
+- Builds **release** on **Windows and Linux** on every push/PR (`cargo build --release --locked`)
+- **macOS** is built in the **Release** workflow (tag or manual run) to avoid long macOS runner queues canceling CI
+- Uploads artifacts: `tgscanner-windows-x86_64`, `tgscanner-linux-x86_64` (Release adds macOS)
 
 Check **Actions** tab after push. If jobs stay **queued** for a long time, open **Settings → Actions → General** and confirm Actions are enabled; free-tier accounts can also hit concurrent-job limits.
 

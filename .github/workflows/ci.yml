@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
@@ -15,7 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS builds in release.yml (runners often queue >15m when many jobs pile up)
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,10 +41,6 @@ jobs:
             libpango1.0-dev libgl1-mesa-dev libglu1-mesa-dev \
             libsecret-1-dev
 
-      - name: Install FLTK (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install fltk
-
       - name: Build (release)
         run: cargo build --release --locked
 
@@ -59,10 +60,3 @@ jobs:
           path: target/release/tgscanner
           if-no-files-found: error
 
-      - name: Upload macOS artifact
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tgscanner-macos-universal
-          path: target/release/tgscanner
-          if-no-files-found: error
