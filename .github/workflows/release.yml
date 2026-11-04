@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: tgscanner-windows-x86_64
+            asset_name: tgscanner-windows-x86_64.exe
+            bin: target/release/tgscanner.exe
+          - os: ubuntu-latest
+            artifact: tgscanner-linux-x86_64
+            asset_name: tgscanner-linux-x86_64
+            bin: target/release/tgscanner
+          - os: macos-latest
+            artifact: tgscanner-macos-universal
+            asset_name: tgscanner-macos-universal
+            bin: target/release/tgscanner
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: swatinem/rust-cache@v2
+
+      - name: Install FLTK (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libfltk1.3-dev
+
+      - name: Install FLTK (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install fltk
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Stage release binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.bin }}" "dist/${{ matrix.asset_name }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.asset_name }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

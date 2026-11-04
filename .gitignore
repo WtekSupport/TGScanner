@@ -1,0 +1,25 @@
+/target/
+.tguser_session
+.tguser_session*
+.tguser_session.enc
+.tguser_config.json
+.tguser_config.json.bak
+.tguser_config.enc
+.tguser_vault.key
+.tguser_phone_lookup_ts
+output/
+.env
+.env.*
+*.pdb
+tgscanner-crash.log
+
+# IDE / editors (local only)
+.idea/
+.vscode/
+.cursor/
+.cursorignore
+.cursorrules
+AGENTS.md
+.specstory/
+*.swp
+*~

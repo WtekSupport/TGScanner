@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: swatinem/rust-cache@v2
+
+      - name: Install FLTK (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libfltk1.3-dev
+
+      - name: Install FLTK (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install fltk
+
+      - name: Build (release)
+        run: cargo build --release --locked
+
+      - name: Upload Windows artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tgscanner-windows-x86_64
+          path: target/release/tgscanner.exe
+          if-no-files-found: error
+
+      - name: Upload Linux artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tgscanner-linux-x86_64
+          path: target/release/tgscanner
+          if-no-files-found: error
+
+      - name: Upload macOS artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tgscanner-macos-universal
+          path: target/release/tgscanner
+          if-no-files-found: error
