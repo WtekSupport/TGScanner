@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an idea
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: checkboxes
+    id: ethics
+    attributes:
+      label: Acknowledgment
+      options:
+        - label: I understand features must not encourage abuse of Telegram ToS or privacy laws
+          required: true
