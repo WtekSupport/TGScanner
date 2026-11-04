@@ -33,29 +33,23 @@ If anything under `.tguser_*`, `output/`, or `target/` appears, **stop** and fix
 
 ### Protect `main` (only owner pushes)
 
-Goal: nobody except **`WtekSupport`** can push commits to `main` (including force-push and branch delete).
+Goal: only **`WtekSupport`** pushes directly to `main`; others need a PR (and cannot merge without your review).
 
-**Option A — GitHub UI**
+**Active ruleset (personal account):** [Repository rules → main — owner push only](https://github.com/WtekSupport/TGScanner/rules/26549794)
 
-1. Repo → **Settings → Branches → Branch protection rules → Add rule**
-2. **Branch name pattern:** `main`
-3. Enable:
-   - **Restrict who can push to matching branches** → add user **`WtekSupport`** only (remove everyone else)
-   - **Do not allow bypassing the above settings** (recommended)
-   - **Block force pushes**
-   - **Block deletions**
-4. Optional: **Require status checks to pass** → select CI job `build` (after Actions run once)
-5. Save
+- Blocks branch **deletion** and **force-push** on `main`
+- Requires **pull request + 1 approval** before merge
+- **Bypass:** user **WtekSupport** only (`bypass_mode: always`) — you can still push commits to `main` directly
 
-Also: **Settings → Collaborators** — do not grant **Write** or **Admin** to others unless they should never touch `main` anyway (protection blocks their pushes).
+> Classic “Restrict who can push” works only on **organization** repos. For a **user** repo, use **Rulesets** (as above) plus no extra **Write** collaborators.
 
-**Option B — script (after `gh auth login`)**
+**Settings → Collaborators** — keep only yourself; do not grant **Write** to others.
+
+**Re-apply via API:** edit `scripts/.ruleset-main.json` (actor_id = your numeric user id from `https://api.github.com/users/WtekSupport`) and run:
 
 ```powershell
 .\scripts\setup-branch-protection.ps1
 ```
-
-To allow a different GitHub username, edit `$PushUsers` in the script.
 
 ## First push
 
