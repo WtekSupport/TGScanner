@@ -20,6 +20,8 @@ Use your own Telegram API credentials; never commit vault files, session files, 
 
 ## Pull requests
 
+The **`main`** branch is **protected**: only the repository owner (**WtekSupport**) may push commits directly. External contributions must use a **fork** and a pull request; they cannot push to `main`.
+
 1. Fork the repository and create a feature branch from `main`.
 2. Keep changes focused; match existing Rust style.
 3. Ensure `RUSTFLAGS=-Dwarnings cargo build --release` passes locally.

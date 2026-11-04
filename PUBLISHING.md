@@ -29,7 +29,33 @@ If anything under `.tguser_*`, `output/`, or `target/` appears, **stop** and fix
 2. **Settings → General → Features:** Issues ✓  
 3. **Settings → Security:** Private vulnerability reporting ✓  
 4. **Settings → Actions → General:** Allow GitHub Actions ✓  
-5. **Settings → Branches → Branch protection** (optional): `main` requires passing **CI** workflow.
+5. **Settings → Branches → Branch protection** for `main` (see below) — **only you** push commits to `main`.
+
+### Protect `main` (only owner pushes)
+
+Goal: nobody except **`WtekSupport`** can push commits to `main` (including force-push and branch delete).
+
+**Option A — GitHub UI**
+
+1. Repo → **Settings → Branches → Branch protection rules → Add rule**
+2. **Branch name pattern:** `main`
+3. Enable:
+   - **Restrict who can push to matching branches** → add user **`WtekSupport`** only (remove everyone else)
+   - **Do not allow bypassing the above settings** (recommended)
+   - **Block force pushes**
+   - **Block deletions**
+4. Optional: **Require status checks to pass** → select CI job `build` (after Actions run once)
+5. Save
+
+Also: **Settings → Collaborators** — do not grant **Write** or **Admin** to others unless they should never touch `main` anyway (protection blocks their pushes).
+
+**Option B — script (after `gh auth login`)**
+
+```powershell
+.\scripts\setup-branch-protection.ps1
+```
+
+To allow a different GitHub username, edit `$PushUsers` in the script.
 
 ## First push
 
