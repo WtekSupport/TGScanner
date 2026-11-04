@@ -353,7 +353,7 @@ dependencies = [
  "grammers-mtproto",
  "grammers-mtsender",
  "grammers-session",
- "grammers-tl-types",
+ "grammers-tl-types 0.7.0",
  "locate-locale",
  "log",
  "md5",
@@ -391,7 +391,7 @@ dependencies = [
  "flate2",
  "getrandom",
  "grammers-crypto",
- "grammers-tl-types",
+ "grammers-tl-types 0.7.0",
  "log",
  "num-bigint",
  "sha1",
@@ -407,7 +407,7 @@ dependencies = [
  "futures-util",
  "grammers-crypto",
  "grammers-mtproto",
- "grammers-tl-types",
+ "grammers-tl-types 0.7.0",
  "log",
  "tokio",
 ]
@@ -419,9 +419,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03d5fea440a79a78d0d68b57f062d737a0aed0decee813bf3c232252f3b3f7da"
 dependencies = [
  "grammers-crypto",
- "grammers-tl-gen",
+ "grammers-tl-gen 0.7.0",
  "grammers-tl-parser",
- "grammers-tl-types",
+ "grammers-tl-types 0.7.0",
  "log",
 ]
 
@@ -430,6 +430,15 @@ name = "grammers-tl-gen"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c214cadfba8cd8ef9368bdf273f56f688537b0310ea42f91fc746f4fd59b70b9"
+dependencies = [
+ "grammers-tl-parser",
+]
+
+[[package]]
+name = "grammers-tl-gen"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf49f6769cffae7ea376669f3073c70eeb16ccc38f00ff019394069f3d401a4c"
 dependencies = [
  "grammers-tl-parser",
 ]
@@ -449,7 +458,17 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49566409a69e4ff3340c1b6f392e5754c89fa1ea43be4584ac8ee74c1eb0643a"
 dependencies = [
- "grammers-tl-gen",
+ "grammers-tl-gen 0.7.0",
+ "grammers-tl-parser",
+]
+
+[[package]]
+name = "grammers-tl-types"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "069e64c424bde5764391bc72f07085a12177d7053c8a0da355425527fd7c221f"
+dependencies = [
+ "grammers-tl-gen 0.11.0",
  "grammers-tl-parser",
 ]
 
@@ -1048,7 +1067,7 @@ dependencies = [
  "fltk",
  "grammers-client",
  "grammers-session",
- "grammers-tl-types",
+ "grammers-tl-types 0.11.0",
  "keyring",
  "rand",
  "serde",
