@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to attach assets to (e.g. v1.0.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -32,6 +38,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -39,9 +47,15 @@ jobs:
       - name: Cache cargo registry
         uses: swatinem/rust-cache@v2
 
-      - name: Install FLTK (Linux)
+      - name: Install Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libfltk1.3-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev libxext-dev libxft-dev libxinerama-dev \
+            libxcursor-dev libxrender-dev libxfixes-dev \
+            libpango1.0-dev libgl1-mesa-dev libglu1-mesa-dev \
+            libsecret-1-dev
 
       - name: Install FLTK (macOS)
         if: matrix.os == 'macos-latest'
@@ -78,6 +92,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
           files: dist/*
           generate_release_notes: true
         env:

@@ -68,11 +68,25 @@ Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 - Builds **release** on Windows, Linux, macOS (`cargo build --release --locked`)
 - Uploads artifacts: `tgscanner-windows-x86_64`, `tgscanner-linux-x86_64`, `tgscanner-macos-universal`
 
-Check **Actions** tab after push.
+Check **Actions** tab after push. If jobs stay **queued** for a long time, open **Settings → Actions → General** and confirm Actions are enabled; free-tier accounts can also hit concurrent-job limits.
 
 ## Official release (binaries for users)
 
-Automated workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) runs when you push a version tag:
+Automated workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) runs when you push a version tag, or manually (**Actions → Release → Run workflow**, field **tag** = e.g. `v1.0.1`):
+
+### Manual release (Windows binary only)
+
+If CI never finishes, from repo root after `cargo build --release`:
+
+```powershell
+New-Item -ItemType Directory -Force dist | Out-Null
+Copy-Item target\release\tgscanner.exe dist\tgscanner-windows-x86_64.exe
+.\scripts\publish-release.ps1 -Tag v1.0.1
+```
+
+Uses the same GitHub token as `git push` (Windows Credential Manager). Requires scope **`repo`** on the PAT.
+
+Automated tag push:
 
 ```bash
 # After bumping version in Cargo.toml + CHANGELOG.md

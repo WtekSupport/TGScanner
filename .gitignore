@@ -1,4 +1,6 @@
 /target/
+dist/
+scripts/.release-*.json
 .tguser_session
 .tguser_session*
 .tguser_session.enc
