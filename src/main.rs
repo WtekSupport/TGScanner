@@ -1,15 +1,13 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-mod app;
-mod busy_ui;
 mod browser;
 mod config;
 mod crash_log;
-mod disclaimer;
 mod i18n;
+mod profile_model;
 mod secure_store;
+mod slint_app;
 mod telegram;
-mod ui_style;
 mod user_event;
 
 use config::AppConfig;
@@ -34,5 +32,5 @@ fn main() {
 
     let loaded = AppConfig::load_with_status(&base);
     let (telegram, result_rx) = spawn_worker(base.clone());
-    app::run(base, loaded, telegram, result_rx);
+    slint_app::run(base, loaded, telegram, result_rx);
 }

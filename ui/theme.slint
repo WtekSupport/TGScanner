@@ -1,0 +1,167 @@
+import {
+    Button, LineEdit, ComboBox, CheckBox, HorizontalBox, ScrollView, VerticalBox
+} from "std-widgets.slint";
+
+export global TelegramTheme {
+    in-out property <brush> bg: #17212b;
+    in-out property <brush> surface: #242f3d;
+    in-out property <brush> input-bg: #1c2733;
+    in-out property <brush> border: #2b3745;
+    in-out property <brush> text: #ffffff;
+    in-out property <brush> muted: #708499;
+    in-out property <brush> accent: #3390ec;
+    in-out property <brush> log-bg: #0f1721;
+    in-out property <brush> log-text: #f5f5f5;
+    in-out property <brush> danger: #e53935;
+}
+
+export component PrimaryButton inherits Button {
+    min-height: 32px;
+    max-height: 36px;
+    vertical-stretch: 0;
+}
+
+export component SecondaryButton inherits Button {
+    min-height: 32px;
+    max-height: 36px;
+    vertical-stretch: 0;
+}
+
+export component FormLabel inherits Text {
+    color: TelegramTheme.muted;
+    font-size: 12px;
+    vertical-alignment: center;
+}
+
+export component HintLink inherits Text {
+    color: TelegramTheme.accent;
+    font-size: 12px;
+    vertical-alignment: center;
+}
+
+export component SectionTitle inherits Text {
+    color: TelegramTheme.text;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/// Текст с переносом: ширина задаётся явно, иначе Slint рисует одну длинную строку.
+export component WrappingText inherits Rectangle {
+    in property <string> body;
+    in property <brush> text-color: TelegramTheme.text;
+    in property <length> text-size: 12px;
+    background: transparent;
+    horizontal-stretch: 1;
+    height: body-text.preferred-height;
+
+    body-text := Text {
+        width: parent.width;
+        text: root.body;
+        color: root.text-color;
+        font-size: root.text-size;
+        wrap: word-wrap;
+        horizontal-alignment: left;
+    }
+}
+
+export component ScrollableTextBlock inherits Rectangle {
+    in property <string> body;
+    in property <brush> text-color: TelegramTheme.text;
+    in property <length> text-size: 12px;
+    background: transparent;
+    vertical-stretch: 1;
+    horizontal-stretch: 1;
+    clip: true;
+
+    scroll := ScrollView {
+        width: 100%;
+        height: 100%;
+        content-width: scroll.visible-width;
+        content-height: body-text.preferred-height;
+
+        body-text := Text {
+            width: scroll.visible-width;
+            text: root.body;
+            color: root.text-color;
+            font-size: root.text-size;
+            wrap: word-wrap;
+            horizontal-alignment: left;
+        }
+    }
+}
+
+export component CompactLineEdit inherits LineEdit {
+    min-height: 34px;
+    max-height: 34px;
+    preferred-height: 34px;
+    vertical-stretch: 0;
+
+    key-pressed(event) => {
+        if (event.modifiers.control && (event.text == "v" || event.text == "V")) {
+            root.paste();
+            return accept;
+        }
+        if (event.modifiers.control && (event.text == "c" || event.text == "C")) {
+            root.copy();
+            return accept;
+        }
+        if (event.modifiers.control && (event.text == "x" || event.text == "X")) {
+            root.cut();
+            return accept;
+        }
+        if (event.modifiers.control && (event.text == "a" || event.text == "A")) {
+            root.select-all();
+            return accept;
+        }
+        return reject;
+    }
+}
+
+export component CompactSecretLineEdit inherits CompactLineEdit {
+    input-type: InputType.password;
+}
+
+export component CompactComboBox inherits ComboBox {
+    min-height: 34px;
+    max-height: 34px;
+    preferred-height: 34px;
+    vertical-stretch: 0;
+}
+
+/// Чекбокс с многострочной подписью (стандартный CheckBox не переносит text).
+export component WrapCheckBox inherits HorizontalBox {
+    in-out property <bool> checked;
+    in-out property <string> label;
+    in property <bool> enabled: true;
+    spacing: 8px;
+    alignment: start;
+    horizontal-stretch: 1;
+
+    CheckBox {
+        checked <=> root.checked;
+        enabled: root.enabled;
+    }
+    Text {
+        horizontal-stretch: 1;
+        text: root.label;
+        color: root.enabled ? TelegramTheme.text : TelegramTheme.muted;
+        font-size: 12px;
+        wrap: word-wrap;
+        vertical-alignment: top;
+        horizontal-alignment: left;
+    }
+}
+
+/// Область вкладки: заполняет высоту TabWidget, прокрутка по вертикали.
+export component TabPage inherits ScrollView {
+    vertical-stretch: 1;
+    horizontal-stretch: 1;
+    content-width: self.visible-width;
+    @children
+}
+
+export component FormRow inherits HorizontalBox {
+    spacing: 8px;
+    alignment: start;
+    horizontal-stretch: 1;
+}

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::i18n::Lang;
 use crate::secure_store;
+use std::path::Path;
 
 fn default_language() -> String {
     "en".to_string()
@@ -112,6 +113,26 @@ impl AppConfig {
 
     pub fn lang(&self) -> Lang {
         Lang::from_config(&self.language)
+    }
+
+    /// API id, hash, and phone filled in settings.
+    pub fn connect_fields(&self) -> Option<(i32, String, String)> {
+        let api_id = self.parsed_api_id().ok()?;
+        let api_hash = self.api_hash.trim();
+        let phone = self.phone.trim();
+        if api_hash.is_empty() || phone.is_empty() {
+            return None;
+        }
+        Some((
+            api_id,
+            api_hash.to_string(),
+            phone.to_string(),
+        ))
+    }
+
+    pub fn has_stored_session(base: &Path) -> bool {
+        secure_store::session_path(base).is_file()
+            || secure_store::legacy_session_path(base).is_file()
     }
 
     pub fn parsed_api_id(&self) -> Result<i32> {

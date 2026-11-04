@@ -1,4 +1,7 @@
-use crate::user_event::{ChannelProfile, ErrorKind, GroupProfile, PhotoResult, UserEvent, UserProfile};
+use crate::user_event::{
+    ChannelProfile, CommonChatSummary, ErrorKind, GroupProfile, PhotoResult, UserEvent,
+    UserProfile,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Lang {
@@ -31,6 +34,7 @@ impl Lang {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum I18nKey {
     WindowTitle,
     TabConnect,
@@ -89,6 +93,40 @@ pub enum I18nKey {
     DialogOk,
     DialogCancel,
     ErrorPrefix,
+    CardClose,
+    CardOpenTme,
+    CardNoPhoto,
+    CardPhotoError,
+    CardSectionDetails,
+    CardSectionCommonChats,
+    CardCommonChatsNone,
+    CardNoPublicLink,
+    CardLabelPhone,
+    CardLabelStatus,
+    CardLabelLanguage,
+    CardLabelCalls,
+    CardLabelFirstName,
+    CardLabelLastName,
+    CardLabelUsernames,
+    CardLabelBio,
+    CardLabelFlags,
+    AutoConnectLog,
+}
+
+pub fn window_title() -> String {
+    format!("TGScanner {} — full profile", env!("CARGO_PKG_VERSION"))
+}
+
+pub fn startup_banner(lang: Lang, workdir: &str) -> String {
+    let ver = window_title();
+    match lang {
+        Lang::En => format!(
+            "{ver}\nProgram folder: {workdir}\nIf lookup output has no \"Phone:\" line, you are not running this build.\n\n"
+        ),
+        Lang::Ru => format!(
+            "{ver}\nПапка программы: {workdir}\nЕсли в результате нет строки «Телефон:», запущена не эта сборка.\n\n"
+        ),
+    }
 }
 
 pub fn t(lang: Lang, key: I18nKey) -> &'static str {
@@ -211,6 +249,12 @@ pub fn t(lang: Lang, key: I18nKey) -> &'static str {
         (Lang::Ru, I18nKey::WelcomeLog) => {
             "Добро пожаловать. Сначала подключитесь к Telegram."
         }
+        (Lang::En, I18nKey::AutoConnectLog) => {
+            "Auto sign-in: connecting to Telegram…"
+        }
+        (Lang::Ru, I18nKey::AutoConnectLog) => {
+            "Автовход: подключение к Telegram…"
+        }
         (Lang::En, I18nKey::Busy) => "Please wait — another operation is in progress…",
         (Lang::Ru, I18nKey::Busy) => "Подождите, выполняется предыдущая операция…",
         (Lang::En, I18nKey::PreloaderWorking) => "Working…",
@@ -273,6 +317,40 @@ pub fn t(lang: Lang, key: I18nKey) -> &'static str {
         (Lang::Ru, I18nKey::DialogCancel) => "Отмена",
         (Lang::En, I18nKey::ErrorPrefix) => "Error",
         (Lang::Ru, I18nKey::ErrorPrefix) => "Ошибка",
+        (Lang::En, I18nKey::CardClose) => "Close",
+        (Lang::Ru, I18nKey::CardClose) => "Закрыть",
+        (Lang::En, I18nKey::CardOpenTme) => "Open in Telegram",
+        (Lang::Ru, I18nKey::CardOpenTme) => "Открыть в Telegram",
+        (Lang::En, I18nKey::CardNoPhoto) => "No photo",
+        (Lang::Ru, I18nKey::CardNoPhoto) => "Нет фото",
+        (Lang::En, I18nKey::CardPhotoError) => "Photo unavailable",
+        (Lang::Ru, I18nKey::CardPhotoError) => "Фото недоступно",
+        (Lang::En, I18nKey::CardSectionDetails) => "Profile",
+        (Lang::Ru, I18nKey::CardSectionDetails) => "Профиль",
+        (Lang::En, I18nKey::CardSectionCommonChats) => "Common chats",
+        (Lang::Ru, I18nKey::CardSectionCommonChats) => "Общие чаты",
+        (Lang::En, I18nKey::CardCommonChatsNone) => "No shared chats found",
+        (Lang::Ru, I18nKey::CardCommonChatsNone) => "Общих чатов не найдено",
+        (Lang::En, I18nKey::CardNoPublicLink) => "(no link)",
+        (Lang::Ru, I18nKey::CardNoPublicLink) => "(без ссылки)",
+        (Lang::En, I18nKey::CardLabelPhone) => "Phone",
+        (Lang::Ru, I18nKey::CardLabelPhone) => "Телефон",
+        (Lang::En, I18nKey::CardLabelStatus) => "Status",
+        (Lang::Ru, I18nKey::CardLabelStatus) => "Статус",
+        (Lang::En, I18nKey::CardLabelLanguage) => "Language",
+        (Lang::Ru, I18nKey::CardLabelLanguage) => "Язык",
+        (Lang::En, I18nKey::CardLabelCalls) => "Voice / video",
+        (Lang::Ru, I18nKey::CardLabelCalls) => "Звонки / видео",
+        (Lang::En, I18nKey::CardLabelFirstName) => "First name",
+        (Lang::Ru, I18nKey::CardLabelFirstName) => "Имя",
+        (Lang::En, I18nKey::CardLabelLastName) => "Last name",
+        (Lang::Ru, I18nKey::CardLabelLastName) => "Фамилия",
+        (Lang::En, I18nKey::CardLabelUsernames) => "Usernames",
+        (Lang::Ru, I18nKey::CardLabelUsernames) => "Usernames",
+        (Lang::En, I18nKey::CardLabelBio) => "Bio",
+        (Lang::Ru, I18nKey::CardLabelBio) => "Bio",
+        (Lang::En, I18nKey::CardLabelFlags) => "Flags",
+        (Lang::Ru, I18nKey::CardLabelFlags) => "Метки",
     }
 }
 
@@ -320,7 +398,7 @@ pub fn disclaimer_document(lang: Lang) -> String {
             This may affect the data subject’s experience on Telegram and creates processing records. Use only where strictly necessary, with documented lawful basis and any required consent. \
             The Lookup tab requires additional confirmations; those confirmations do not replace your legal obligations.\n\n",
             "8. Intellectual property\n",
-            "Third-party materials (Telegram, grammers, FLTK, etc.) remain subject to their licenses. You receive no ownership rights in TGScanner except as granted by AGPL-3.0-or-later. \
+            "Third-party materials (Telegram, grammers, Slint, etc.) remain subject to their licenses. You receive no ownership rights in TGScanner except as granted by AGPL-3.0-or-later. \
             If you modify or offer network access to modified versions, you must comply with AGPL obligations.\n\n",
             "9. Disclaimer of warranties\n",
             "TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, TGSCANNER IS PROVIDED \"AS IS\" AND \"AS AVAILABLE\" WITHOUT WARRANTIES OF ANY KIND, \
@@ -378,7 +456,7 @@ pub fn disclaimer_document(lang: Lang) -> String {
             "Используется импорт контакта в аккаунт Telegram, затем попытка удаления. Это может затрагивать субъекта данных и создавать записи обработки. \
             Применяйте только при необходимости, с документированным основанием и согласиями. Подтверждения на вкладке «Поиск» не снимают юридических обязанностей.\n\n",
             "8. Интеллектуальная собственность\n",
-            "Компоненты третьих лиц (Telegram, grammers, FLTK и др.) подчиняются своим лицензиям. Права на TGScanner — по AGPL-3.0-or-later. \
+            "Компоненты третьих лиц (Telegram, grammers, Slint и др.) подчиняются своим лицензиям. Права на TGScanner — по AGPL-3.0-or-later. \
             При модификации и сетевом предоставлении изменённых версий соблюдайте обязательства AGPL.\n\n",
             "9. Отказ от гарантий\n",
             "В МАКСИМАЛЬНО ДОПУСТИМОЙ ЗАКОНОМ СТЕПЕНИ ПО ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ» БЕЗ КАКИХ-ЛИБО ГАРАНТИЙ, ЯВНЫХ ИЛИ ПОДРАЗУМЕВАЕМЫХ, \
@@ -402,9 +480,17 @@ pub fn disclaimer_document(lang: Lang) -> String {
 
 pub fn format_event(lang: Lang, ev: &UserEvent) -> String {
     match ev {
-        UserEvent::ConnectedAlready => match lang {
-            Lang::En => "Already signed in. You can run lookups.".into(),
-            Lang::Ru => "Уже авторизован. Можно выполнять поиск.".into(),
+        UserEvent::Ready { account } => match lang {
+            Lang::En => format!("Signed in as {account}. Lookups are enabled."),
+            Lang::Ru => format!("Вход подтверждён: {account}. Поиск доступен."),
+        },
+        UserEvent::SessionLost => match lang {
+            Lang::En => {
+                "Connection lost or session invalid. Connect again on the Connection tab.".into()
+            }
+            Lang::Ru => {
+                "Соединение разорвано или сессия недействительна. Подключитесь снова на вкладке «Подключение».".into()
+            }
         },
         UserEvent::CodeSent => match lang {
             Lang::En => {
@@ -413,10 +499,6 @@ pub fn format_event(lang: Lang, ev: &UserEvent) -> String {
             Lang::Ru => {
                 "Код отправлен в Telegram. Введите его на вкладке «Подключение».".into()
             }
-        },
-        UserEvent::SignedIn => match lang {
-            Lang::En => "Signed in.".into(),
-            Lang::Ru => "Вход выполнен.".into(),
         },
         UserEvent::Need2fa => match lang {
             Lang::En => "2FA password required.".into(),
@@ -576,6 +658,195 @@ fn format_photo(lang: Lang, photo: &PhotoResult) -> String {
     }
 }
 
+fn fmt_opt(lang: Lang, value: &Option<String>) -> String {
+    value
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| dash(lang).into())
+}
+
+fn fmt_opt_i32(lang: Lang, value: Option<i32>) -> String {
+    value
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| dash(lang).into())
+}
+
+fn fmt_opt_bool(lang: Lang, value: Option<bool>) -> String {
+    match value {
+        Some(true) => match lang {
+            Lang::En => "yes".into(),
+            Lang::Ru => "да".into(),
+        },
+        Some(false) => match lang {
+            Lang::En => "no".into(),
+            Lang::Ru => "нет".into(),
+        },
+        None => dash(lang).into(),
+    }
+}
+
+fn fmt_list(lang: Lang, items: &[String]) -> String {
+    if items.is_empty() {
+        dash(lang).into()
+    } else {
+        items.join(", ")
+    }
+}
+
+fn fmt_bool(lang: Lang, value: bool) -> &'static str {
+    match (lang, value) {
+        (Lang::En, true) => "yes",
+        (Lang::En, false) => "no",
+        (Lang::Ru, true) => "да",
+        (Lang::Ru, false) => "нет",
+    }
+}
+
+pub fn display_opt(lang: Lang, value: &Option<String>) -> String {
+    fmt_opt(lang, value)
+}
+
+pub fn format_usernames(p: &UserProfile) -> String {
+    if !p.usernames.is_empty() {
+        p.usernames
+            .iter()
+            .map(|u| format!("@{u}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else if let Some(u) = &p.username {
+        format!("@{u}")
+    } else {
+        "—".to_string()
+    }
+}
+
+pub fn format_calls_pair(lang: Lang, p: &UserProfile) -> String {
+    format!(
+        "{} / {}",
+        fmt_opt_bool(lang, p.phone_calls_available),
+        fmt_opt_bool(lang, p.video_calls_available)
+    )
+}
+
+pub fn format_profile_flags(lang: Lang, p: &UserProfile) -> String {
+    let mut parts = Vec::new();
+    if p.is_bot {
+        parts.push(match lang {
+            Lang::En => "bot",
+            Lang::Ru => "бот",
+        });
+    }
+    if p.scam {
+        parts.push("scam");
+    }
+    if p.fake {
+        parts.push("fake");
+    }
+    if p.restricted {
+        parts.push(match lang {
+            Lang::En => "restricted",
+            Lang::Ru => "ограничен",
+        });
+    }
+    if p.deleted {
+        parts.push(match lang {
+            Lang::En => "deleted",
+            Lang::Ru => "удалён",
+        });
+    }
+    parts.join(" · ")
+}
+
+pub fn format_common_chats_section(lang: Lang, count: usize) -> String {
+    match lang {
+        Lang::En => format!("Common chats ({count})"),
+        Lang::Ru => format!("Общие чаты ({count})"),
+    }
+}
+
+pub fn chat_kind_label(lang: Lang, kind: &str) -> &'static str {
+    match (lang, kind) {
+        (Lang::En, "channel") => "channel",
+        (Lang::Ru, "channel") => "канал",
+        (Lang::En, "supergroup") => "super",
+        (Lang::Ru, "supergroup") => "супер",
+        (Lang::En, "group") => "group",
+        (Lang::Ru, "group") => "группа",
+        (Lang::En, _) => "chat",
+        (Lang::Ru, _) => "чат",
+    }
+}
+
+pub fn format_user_badges(lang: Lang, p: &UserProfile) -> String {
+    let mut tags = Vec::new();
+    if p.verified {
+        tags.push(match lang {
+            Lang::En => "verified",
+            Lang::Ru => "верифицирован",
+        });
+    }
+    if p.premium {
+        tags.push("Premium");
+    }
+    if p.is_bot {
+        tags.push(match lang {
+            Lang::En => "bot",
+            Lang::Ru => "бот",
+        });
+    }
+    if p.contact {
+        tags.push(match lang {
+            Lang::En => "contact",
+            Lang::Ru => "контакт",
+        });
+    }
+    if p.mutual_contact {
+        tags.push(match lang {
+            Lang::En => "mutual",
+            Lang::Ru => "взаимный",
+        });
+    }
+    if p.scam {
+        tags.push("scam");
+    }
+    if p.fake {
+        tags.push("fake");
+    }
+    if tags.is_empty() {
+        return match lang {
+            Lang::En => "—".into(),
+            Lang::Ru => "—".into(),
+        };
+    }
+    tags.join(" · ")
+}
+
+fn format_common_chats(lang: Lang, chats: &[CommonChatSummary]) -> String {
+    if chats.is_empty() {
+        return match lang {
+            Lang::En => "Common chats: —".into(),
+            Lang::Ru => "Общие чаты: —".into(),
+        };
+    }
+    let header = match lang {
+        Lang::En => format!("Common chats ({}):", chats.len()),
+        Lang::Ru => format!("Общие чаты ({}):", chats.len()),
+    };
+    let mut lines = vec![header];
+    for c in chats {
+        let line = match c.link.as_deref() {
+            Some(url) => format!("  • {}  {url}", c.title),
+            None => match lang {
+                Lang::En => format!("  • {}  (no public link)", c.title),
+                Lang::Ru => format!("  • {}  (нет публичной ссылки)", c.title),
+            },
+        };
+        lines.push(line);
+    }
+    lines.join("\n")
+}
+
 fn format_user_profile(lang: Lang, p: &UserProfile) -> String {
     let username = p
         .username
@@ -587,17 +858,72 @@ fn format_user_profile(lang: Lang, p: &UserProfile) -> String {
     } else {
         p.bio.clone()
     };
+    let usernames = if p.usernames.is_empty() {
+        dash(lang).into()
+    } else {
+        p.usernames
+            .iter()
+            .map(|u| format!("@{u}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let json_line = p.json_path.as_ref().map(|path| match lang {
+        Lang::En => format!("\nJSON: {}", path.display()),
+        Lang::Ru => format!("\nJSON: {}", path.display()),
+    }).unwrap_or_default();
+    let common_block = format_common_chats(lang, &p.common_chats);
+
     match lang {
         Lang::En => format!(
-            "Type: user\nID: {}\nName: {}\nUsername: {username}\nBio: {bio}\n{}",
+            "Type: user\nID: {}\nName: {}\nFirst name: {}\nLast name: {}\nUsername: {username}\nUsernames: {usernames}\nPhone: {}\nBio: {bio}\nStatus: {}\nLang: {}\nBot: {}\nVerified: {}\nPremium: {}\nScam: {}\nFake: {}\nDeleted: {}\nRestricted: {}\nSupport: {}\nContact: {}\nMutual contact: {}\nSelf: {}\nRestrictions: {}\nCommon chats (count): {}\n{common_block}\nPhone calls: {}\nVideo calls: {}\n{json_line}\n{}",
             p.id,
             p.name,
+            p.first_name,
+            fmt_opt(lang, &p.last_name),
+            fmt_opt(lang, &p.phone),
+            p.status,
+            fmt_opt(lang, &p.lang_code),
+            fmt_bool(lang, p.is_bot),
+            fmt_bool(lang, p.verified),
+            fmt_bool(lang, p.premium),
+            fmt_bool(lang, p.scam),
+            fmt_bool(lang, p.fake),
+            fmt_bool(lang, p.deleted),
+            fmt_bool(lang, p.restricted),
+            fmt_bool(lang, p.support),
+            fmt_bool(lang, p.contact),
+            fmt_bool(lang, p.mutual_contact),
+            fmt_bool(lang, p.is_self),
+            fmt_list(lang, &p.restriction_reasons),
+            fmt_opt_i32(lang, p.common_chats_count),
+            fmt_opt_bool(lang, p.phone_calls_available),
+            fmt_opt_bool(lang, p.video_calls_available),
             format_photo(lang, &p.photo)
         ),
         Lang::Ru => format!(
-            "Тип: пользователь\nID: {}\nИмя: {}\nUsername: {username}\nBio: {bio}\n{}",
+            "Тип: пользователь\nID: {}\nИмя: {}\nИмя (first): {}\nФамилия: {}\nUsername: {username}\nUsernames: {usernames}\nТелефон: {}\nBio: {bio}\nСтатус: {}\nЯзык: {}\nБот: {}\nВерифицирован: {}\nPremium: {}\nScam: {}\nFake: {}\nУдалён: {}\nОграничен: {}\nSupport: {}\nКонтакт: {}\nВзаимный контакт: {}\nЭто я: {}\nОграничения: {}\nОбщие чаты (число): {}\n{common_block}\nЗвонки: {}\nВидеозвонки: {}\n{json_line}\n{}",
             p.id,
             p.name,
+            p.first_name,
+            fmt_opt(lang, &p.last_name),
+            fmt_opt(lang, &p.phone),
+            p.status,
+            fmt_opt(lang, &p.lang_code),
+            fmt_bool(lang, p.is_bot),
+            fmt_bool(lang, p.verified),
+            fmt_bool(lang, p.premium),
+            fmt_bool(lang, p.scam),
+            fmt_bool(lang, p.fake),
+            fmt_bool(lang, p.deleted),
+            fmt_bool(lang, p.restricted),
+            fmt_bool(lang, p.support),
+            fmt_bool(lang, p.contact),
+            fmt_bool(lang, p.mutual_contact),
+            fmt_bool(lang, p.is_self),
+            fmt_list(lang, &p.restriction_reasons),
+            fmt_opt_i32(lang, p.common_chats_count),
+            fmt_opt_bool(lang, p.phone_calls_available),
+            fmt_opt_bool(lang, p.video_calls_available),
             format_photo(lang, &p.photo)
         ),
     }
@@ -610,34 +936,93 @@ fn format_group_profile(lang: Lang, g: &GroupProfile) -> String {
         (Lang::Ru, true) => "супергруппа",
         (Lang::Ru, false) => "группа",
     };
+    let username = g
+        .username
+        .as_ref()
+        .map(|u| format!("@{u}"))
+        .unwrap_or_else(|| dash(lang).into());
+    let about = if g.about.is_empty() {
+        dash(lang).into()
+    } else {
+        g.about.clone()
+    };
+    let json_line = g.json_path.as_ref().map(|path| match lang {
+        Lang::En => format!("\nJSON: {}", path.display()),
+        Lang::Ru => format!("\nJSON: {}", path.display()),
+    }).unwrap_or_default();
+
     match lang {
-        Lang::En => format!("Type: {kind}\nID: {}\nTitle: {}", g.id, g.title),
-        Lang::Ru => format!("Тип: {kind}\nID: {}\nНазвание: {}", g.id, g.title),
+        Lang::En => format!(
+            "Type: {kind}\nID: {}\nTitle: {}\nUsername: {username}\nMembers: {}\nAbout: {about}{json_line}",
+            g.id,
+            g.title,
+            fmt_opt_i32(lang, g.participants_count),
+        ),
+        Lang::Ru => format!(
+            "Тип: {kind}\nID: {}\nНазвание: {}\nUsername: {username}\nУчастников: {}\nОписание: {about}{json_line}",
+            g.id,
+            g.title,
+            fmt_opt_i32(lang, g.participants_count),
+        ),
     }
 }
 
 fn format_channel_profile(lang: Lang, c: &ChannelProfile) -> String {
+    let kind = match (lang, c.broadcast, c.megagroup) {
+        (Lang::En, true, _) => "channel",
+        (Lang::En, false, true) => "supergroup",
+        (Lang::En, false, false) => "chat",
+        (Lang::Ru, true, _) => "канал",
+        (Lang::Ru, false, true) => "супергруппа",
+        (Lang::Ru, false, false) => "чат",
+    };
     let username = c
         .username
         .as_ref()
         .map(|u| format!("@{u}"))
         .unwrap_or_else(|| dash(lang).into());
+    let usernames = if c.usernames.is_empty() {
+        dash(lang).into()
+    } else {
+        c.usernames
+            .iter()
+            .map(|u| format!("@{u}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let about = if c.about.is_empty() {
         dash(lang).into()
     } else {
         c.about.clone()
     };
+    let json_line = c.json_path.as_ref().map(|path| match lang {
+        Lang::En => format!("\nJSON: {}", path.display()),
+        Lang::Ru => format!("\nJSON: {}", path.display()),
+    }).unwrap_or_default();
+
     match lang {
         Lang::En => format!(
-            "Type: channel\nID: {}\nTitle: {}\nUsername: {username}\nAbout: {about}\n{}",
+            "Type: {kind}\nID: {}\nTitle: {}\nUsername: {username}\nUsernames: {usernames}\nAbout: {about}\nSubscribers: {}\nVerified: {}\nScam: {}\nFake: {}\nRestricted: {}\nRestrictions: {}\n{json_line}\n{}",
             c.id,
             c.title,
+            fmt_opt_i32(lang, c.participants_count),
+            fmt_bool(lang, c.verified),
+            fmt_bool(lang, c.scam),
+            fmt_bool(lang, c.fake),
+            fmt_bool(lang, c.restricted),
+            fmt_list(lang, &c.restriction_reasons),
             format_photo(lang, &c.photo)
         ),
         Lang::Ru => format!(
-            "Тип: канал\nID: {}\nНазвание: {}\nUsername: {username}\nОписание: {about}\n{}",
+            "Тип: {kind}\nID: {}\nНазвание: {}\nUsername: {username}\nUsernames: {usernames}\nОписание: {about}\nПодписчиков: {}\nВерифицирован: {}\nScam: {}\nFake: {}\nОграничен: {}\nОграничения: {}\n{json_line}\n{}",
             c.id,
             c.title,
+            fmt_opt_i32(lang, c.participants_count),
+            fmt_bool(lang, c.verified),
+            fmt_bool(lang, c.scam),
+            fmt_bool(lang, c.fake),
+            fmt_bool(lang, c.restricted),
+            fmt_list(lang, &c.restriction_reasons),
             format_photo(lang, &c.photo)
         ),
     }

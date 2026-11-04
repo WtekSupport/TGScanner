@@ -1,0 +1,87 @@
+import { VerticalBox, HorizontalBox, CheckBox } from "std-widgets.slint";
+import {
+    TelegramTheme, PrimaryButton, SecondaryButton, SectionTitle, WrappingText,
+    ScrollableTextBlock
+} from "theme.slint";
+
+export component DisclaimerWindow inherits Window {
+    title: root.window-title;
+    preferred-width: 720px;
+    preferred-height: 640px;
+    background: TelegramTheme.bg;
+
+    in-out property <string> window-title;
+    in-out property <string> title-text;
+    in-out property <string> subtitle-text;
+    in-out property <string> body-text;
+    in-out property <string> accept-label;
+    in-out property <string> decline-label;
+    in-out property <string> checkbox-label;
+    in-out property <bool> agreed;
+    callback accepted();
+    callback declined();
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 10px;
+        vertical-stretch: 1;
+
+        SectionTitle { text: root.title-text; }
+        WrappingText {
+            body: root.subtitle-text;
+            text-color: TelegramTheme.muted;
+            text-size: 12px;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: TelegramTheme.border;
+        }
+
+        ScrollableTextBlock {
+            vertical-stretch: 1;
+            body: root.body-text;
+            text-color: TelegramTheme.text;
+            text-size: 12px;
+        }
+
+        Rectangle {
+            vertical-stretch: 0;
+            horizontal-stretch: 1;
+            background: TelegramTheme.surface;
+            border-radius: 4px;
+            VerticalBox {
+                padding: 12px;
+                spacing: 10px;
+                HorizontalBox {
+                    spacing: 12px;
+                    alignment: start;
+                    WrappingText {
+                        horizontal-stretch: 1;
+                        body: root.checkbox-label;
+                        text-color: TelegramTheme.text;
+                        text-size: 12px;
+                    }
+                    CheckBox {
+                        checked <=> root.agreed;
+                    }
+                }
+                HorizontalBox {
+                    spacing: 12px;
+                    alignment: start;
+                    PrimaryButton {
+                        width: 50%;
+                        text: root.accept-label;
+                        enabled: root.agreed;
+                        clicked => { root.accepted(); }
+                    }
+                    SecondaryButton {
+                        horizontal-stretch: 1;
+                        text: root.decline-label;
+                        clicked => { root.declined(); }
+                    }
+                }
+            }
+        }
+    }
+}

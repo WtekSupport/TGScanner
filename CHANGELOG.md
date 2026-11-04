@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 **Release numbering starts at [1.0.1]** — the first published baseline; later entries are added above this section.
 
+## [1.1.0] - 2026-11-04
+
+### Changed
+
+- **UI stack:** FLTK replaced with **[Slint](https://slint.dev/)** (Winit + FemtoVG). Declarative `.slint` layouts; Telegram-dark theme preserved.
+- **Profile card** opens in a separate Slint window with scrollable fields and clickable common-chat links.
+- **Session flow:** auto-connect when config + session exist; lookup tab gated until `get_me` validation (`Ready` event); reconnect on transport errors (unchanged logic, Slint bridge).
+
+### Added
+
+- `build.rs` compiles `ui/app.slint`; Linux CI deps updated for Slint (XCB, fontconfig, Mesa, etc.).
+
+### Removed
+
+- FLTK modules (`app.rs`, `disclaimer.rs`, `profile_card.rs`, `busy_ui.rs`, `ui_style.rs`).
+
+### Fixed
+
+- Slint layout: word wrap in disclaimer and lookup checkboxes, tab area height, busy overlay, compact profile card.
+- Connection tab: masked API hash and 2FA fields; connect button on the phone row; removed numbered step hints.
+
+[1.1.0]: https://github.com/WtekSupport/TGScanner/releases/tag/v1.1.0
+
 ## [1.0.1] - 2026-11-04
 
 First **1.x** release: desktop feature set, Telegram-style UI, safer ID lookup, and crash diagnostics.

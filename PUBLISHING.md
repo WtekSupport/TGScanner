@@ -14,6 +14,8 @@ Release numbering starts at **v1.0.1** — see [CHANGELOG.md](CHANGELOG.md).
 | `LICENSE`, `README.md`, templates | `tgscanner-crash.log`, `.env` |
 | | `target/` (build output) |
 
+**Linux build (Slint):** CI installs XCB, fontconfig, Mesa, and related dev packages — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Local Ubuntu/Debian builds need the same apt packages (or build via `cargo build --release` after matching CI deps).
+
 Before every push, run:
 
 ```bash

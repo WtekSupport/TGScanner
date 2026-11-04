@@ -1,13 +1,13 @@
 [package]
 name = "tgscanner"
-version = "1.0.1"
+version = "1.1.0"
 authors = ["WtekSupport"]
 edition = "2021"
-rust-version = "1.70"
-description = "TGScanner — desktop GUI to look up public Telegram profile info via the user API (grammers)"
+rust-version = "1.76"
+description = "TGScanner — desktop GUI to look up public Telegram profile info via the user API (grammers, Slint UI)"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
-keywords = ["telegram", "grammers", "fltk", "desktop", "tgscanner"]
+keywords = ["telegram", "grammers", "slint", "desktop", "tgscanner"]
 categories = ["gui"]
 repository = "https://github.com/WtekSupport/TGScanner"
 homepage = "https://github.com/WtekSupport/TGScanner"
@@ -16,7 +16,7 @@ exclude = ["/output", ".tguser_*"]
 
 [dependencies]
 anyhow = "1"
-fltk = { version = "1.5", features = ["fltk-bundled"] }
+slint = { version = "1.18", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "compat-1-18"] }
 grammers-client = "0.7"
 grammers-session = "0.7"
 grammers-tl-types = "0.7"
@@ -27,6 +27,9 @@ chacha20poly1305 = "0.10"
 rand = "0.8"
 keyring = "3"
 sha2 = "0.10"
+
+[build-dependencies]
+slint-build = "1.18"
 
 [profile.release]
 opt-level = "z"
