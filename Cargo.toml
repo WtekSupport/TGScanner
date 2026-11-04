@@ -17,7 +17,7 @@ exclude = ["/output", ".tguser_*"]
 [dependencies]
 anyhow = "1"
 fltk = { version = "1.5", features = ["fltk-bundled"] }
-grammers-client = "0.7"
+grammers-client = "0.11"
 grammers-session = "0.7"
 grammers-tl-types = "0.7"
 serde = { version = "1", features = ["derive"] }
