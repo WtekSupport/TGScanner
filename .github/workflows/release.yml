@@ -14,41 +14,27 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            artifact: tgscanner-windows-x86_64
-            asset_name: tgscanner-windows-x86_64.exe
-            bin: target/release/tgscanner.exe
-          - os: ubuntu-latest
-            artifact: tgscanner-linux-x86_64
-            asset_name: tgscanner-linux-x86_64
-            bin: target/release/tgscanner
-          - os: macos-latest
-            artifact: tgscanner-macos-universal
-            asset_name: tgscanner-macos-universal
-            bin: target/release/tgscanner
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+          ref: ${{ env.RELEASE_REF }}
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
 
       - name: Install Linux build dependencies
-        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -57,33 +43,78 @@ jobs:
             libpango1.0-dev libgl1-mesa-dev libglu1-mesa-dev \
             libsecret-1-dev
 
-      - name: Install FLTK (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install fltk
+      - run: cargo build --release --locked
 
-      - name: Build release
-        run: cargo build --release --locked
-
-      - name: Stage release binary
-        shell: bash
+      - name: Stage Linux binary
         run: |
           mkdir -p dist
-          cp "${{ matrix.bin }}" "dist/${{ matrix.asset_name }}"
+          cp target/release/tgscanner dist/tgscanner-linux-x86_64
 
-      - name: Upload build artifact
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.asset_name }}
+          name: tgscanner-linux-x86_64
+          path: dist/tgscanner-linux-x86_64
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+
+      - name: Stage Windows binary
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/tgscanner.exe dist/tgscanner-windows-x86_64.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tgscanner-windows-x86_64
+          path: dist/tgscanner-windows-x86_64.exe
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+
+      - name: Stage macOS binary
+        run: |
+          mkdir -p dist
+          cp target/release/tgscanner dist/tgscanner-macos-universal
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tgscanner-macos-universal
+          path: dist/tgscanner-macos-universal
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [build-linux, build-windows, build-macos]
+    if: >-
+      always() &&
+      needs.build-linux.result == 'success' &&
+      needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all platform binaries
+      - name: Download platform binaries
         uses: actions/download-artifact@v4
         with:
           path: dist
@@ -92,7 +123,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*
           generate_release_notes: true
         env:
