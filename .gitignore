@@ -1,6 +1,7 @@
 /target/
 dist/
 scripts/.release-*.json
+scripts/.dispatch-release.json
 .tguser_session
 .tguser_session*
 .tguser_session.enc
