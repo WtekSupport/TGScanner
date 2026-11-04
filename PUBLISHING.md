@@ -89,3 +89,11 @@ cargo build --release --locked
 ```
 
 Do not copy `target/release/.tguser_*` when sharing the exe — those are local runtime files.
+
+## Commits without third-party co-authors
+
+Make release commits from **Git Bash** or **cmd** outside the IDE so the message stays exactly:
+
+`Release TGScanner v1.0.1 for public GitHub deployment.`
+
+If a `Co-authored-by:` trailer appears in history, amend and force-push from a normal terminal (not an IDE-integrated shell), then move tag `v1.0.1` to the new commit.
