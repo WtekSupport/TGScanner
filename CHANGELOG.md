@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 **Release numbering starts at [1.0.1]** — the first published baseline; later entries are added above this section.
 
+## [1.2.0] - 2026-11-05
+
+### Added
+
+- **Profile card:** trash button on each common chat to delete **your own messages** (full history scan, batch delete with revoke where Telegram allows).
+- Live progress overlay: messages scanned / deleted, FloodWait pause hint; confirmation dialog before start.
+
+### Fixed
+
+- Profile card: delete confirmation uses in-window modal overlay (Slint `Dialog` broke layout on the separate profile window).
+
 ## [1.1.0] - 2026-11-04
 
 ### Changed
@@ -27,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Slint layout: word wrap in disclaimer and lookup checkboxes, tab area height, busy overlay, compact profile card.
 - Connection tab: masked API hash and 2FA fields; connect button on the phone row; removed numbered step hints.
 
+[1.2.0]: https://github.com/WtekSupport/TGScanner/releases/tag/v1.2.0
 [1.1.0]: https://github.com/WtekSupport/TGScanner/releases/tag/v1.1.0
 
 ## [1.0.1] - 2026-11-04

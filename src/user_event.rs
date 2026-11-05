@@ -13,6 +13,8 @@ pub struct CommonChatSummary {
     pub kind: String,
     pub telegram_id: i64,
     pub link: Option<String>,
+    /// Serialized [`grammers_session::PackedChat`] for worker operations.
+    pub packed_hex: String,
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +103,19 @@ pub enum UserEvent {
     PhoneLookupComplete {
         profile: Box<UserEvent>,
         contact_removed: bool,
+    },
+    /// Progress while scanning/deleting own messages in a common chat (does not end busy state).
+    DeleteMessagesProgress {
+        chat_title: String,
+        scanned: u64,
+        deleted: u64,
+        flood_wait_secs: Option<u32>,
+    },
+    DeleteMessagesFinished {
+        chat_title: String,
+        scanned: u64,
+        deleted: u64,
+        failed_batches: u32,
     },
     Error {
         kind: ErrorKind,

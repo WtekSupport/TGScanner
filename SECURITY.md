@@ -29,5 +29,6 @@ Include steps to reproduce, impact, and affected version/commit if known.
 - Secret fields for API hash and 2FA password.
 - Two checkboxes plus a confirmation dialog before phone lookup.
 - Rate limiting between phone lookups (see `.tguser_phone_lookup_ts`).
+- **Bulk delete own messages** in a common chat (profile card) is irreversible; requires explicit confirmation; subject to Telegram limits and your legal obligations.
 
 We aim to acknowledge reports within a reasonable time and patch critical issues on `main` first.

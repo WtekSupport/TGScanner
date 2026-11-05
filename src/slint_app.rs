@@ -4,7 +4,7 @@ use crate::i18n::{self, workdir_line, Lang, I18nKey};
 use crate::profile_model;
 use crate::telegram::{TelegramHandle, WorkerCommand};
 use crate::user_event::{ErrorKind, UserEvent};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel, Weak};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -20,6 +20,7 @@ struct SharedState {
     lang: Cell<Lang>,
     disclaimer_version: Cell<u32>,
     pending_phone_lookup: Cell<Option<String>>,
+    profile_card: RefCell<Option<Weak<ProfileCardWindow>>>,
 }
 
 pub fn run(
@@ -44,6 +45,7 @@ pub fn run(
         lang: Cell::new(lang),
         disclaimer_version: Cell::new(config.disclaimer_version),
         pending_phone_lookup: Cell::new(None),
+        profile_card: RefCell::new(None),
     });
 
     let workdir = base_dir.display().to_string();
@@ -59,7 +61,7 @@ pub fn run(
         std::time::Duration::from_millis(200),
         move || {
             if let Some(ui) = ui_handle.upgrade() {
-                poll_worker(&ui, &shared_poll);
+                poll_worker(&ui, shared_poll.clone());
             }
         },
     );
@@ -372,6 +374,51 @@ fn wire_callbacks(ui: &MainWindow, shared: Rc<SharedState>, workdir: String) {
     });
 }
 
+fn profile_card_hooks(shared: Rc<SharedState>, main_weak: Weak<MainWindow>) -> profile_model::ProfileCardHooks {
+    profile_model::ProfileCardHooks {
+        register_window: {
+            let s = shared.clone();
+            Rc::new(move |weak| {
+                s.profile_card.replace(Some(weak));
+            })
+        },
+        on_delete_confirmed: {
+            let s = shared.clone();
+            Rc::new(move |hex, title| {
+                let Some(ui) = main_weak.upgrade() else {
+                    return;
+                };
+                if let Some(card) = s
+                    .profile_card
+                    .borrow()
+                    .as_ref()
+                    .and_then(|w| w.upgrade())
+                {
+                    profile_model::update_delete_progress(&card, s.lang.get(), &title, 0, 0, None);
+                }
+                send_cmd(
+                    &s,
+                    &ui,
+                    WorkerCommand::DeleteOwnMessages {
+                        packed_hex: hex,
+                        chat_title: title,
+                    },
+                );
+            })
+        },
+    }
+}
+
+fn open_profile_card_for_user(
+    ui: &MainWindow,
+    shared: Rc<SharedState>,
+    lang: Lang,
+    profile: &crate::user_event::UserProfile,
+) {
+    let hooks = profile_card_hooks(shared, ui.as_weak());
+    profile_model::open_profile_card(lang, profile, &hooks);
+}
+
 fn send_cmd(state: &SharedState, ui: &MainWindow, cmd: WorkerCommand) {
     let lang = state.lang.get();
     if state.busy.get() {
@@ -387,7 +434,7 @@ fn send_cmd(state: &SharedState, ui: &MainWindow, cmd: WorkerCommand) {
     }
 }
 
-fn poll_worker(ui: &MainWindow, state: &SharedState) {
+fn poll_worker(ui: &MainWindow, state: Rc<SharedState>) {
     let lang = state.lang.get();
     while let Ok(ev) = state.result_rx.borrow_mut().try_recv() {
         match &ev {
@@ -401,16 +448,56 @@ fn poll_worker(ui: &MainWindow, state: &SharedState) {
                     ui.set_lookup_enabled(false);
                 }
             }
-            UserEvent::UserProfile(p) => profile_model::open_profile_card(lang, p),
+            UserEvent::DeleteMessagesProgress {
+                chat_title,
+                scanned,
+                deleted,
+                flood_wait_secs,
+            } => {
+                if let Some(card) = state
+                    .profile_card
+                    .borrow()
+                    .as_ref()
+                    .and_then(|w| w.upgrade())
+                {
+                    profile_model::update_delete_progress(
+                        &card,
+                        lang,
+                        chat_title,
+                        *scanned,
+                        *deleted,
+                        *flood_wait_secs,
+                    );
+                }
+                continue;
+            }
+            UserEvent::DeleteMessagesFinished { .. } => {
+                if let Some(card) = state
+                    .profile_card
+                    .borrow()
+                    .as_ref()
+                    .and_then(|w| w.upgrade())
+                {
+                    profile_model::finish_delete_progress(&card);
+                }
+            }
+            UserEvent::UserProfile(p) => {
+                open_profile_card_for_user(ui, state.clone(), lang, p);
+            }
             UserEvent::PhoneLookupComplete { profile, .. } => {
                 if let UserEvent::UserProfile(p) = profile.as_ref() {
-                    profile_model::open_profile_card(lang, p);
+                    open_profile_card_for_user(ui, state.clone(), lang, p);
                 }
             }
             _ => {}
         }
         append_log(ui, &i18n::format_event(lang, &ev).as_str());
-        state.busy.set(false);
+        if !matches!(
+            ev,
+            UserEvent::DeleteMessagesProgress { .. }
+        ) {
+            state.busy.set(false);
+        }
     }
     if !state.busy.get() {
         ui.set_busy(false);

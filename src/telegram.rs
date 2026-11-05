@@ -8,6 +8,7 @@ use crate::user_event::{
 use anyhow::anyhow;
 use grammers_client::types::{Channel, Chat, Downloadable, Group, Media, User};
 use grammers_client::{Client, Config, SignInError};
+use grammers_client::InvocationError;
 use grammers_session::{PackedChat, PackedType, Session};
 use grammers_tl_types as tl;
 use std::path::{Path, PathBuf};
@@ -49,6 +50,10 @@ pub enum WorkerCommand {
     LookupId(i64),
     LookupPhone(String),
     LookupUrl(String),
+    DeleteOwnMessages {
+        packed_hex: String,
+        chat_title: String,
+    },
 }
 
 pub struct TelegramHandle {
@@ -150,6 +155,18 @@ pub fn spawn_worker(base_dir: PathBuf) -> (TelegramHandle, mpsc::Receiver<UserEv
                             &mut login_token,
                             LookupOp::Url(url),
                             output_dir_for(&base_dir),
+                        )
+                        .await
+                    }
+                    WorkerCommand::DeleteOwnMessages {
+                        packed_hex,
+                        chat_title,
+                    } => {
+                        delete_own_messages_with_progress(
+                            &client,
+                            packed_hex,
+                            chat_title,
+                            &result_tx,
                         )
                         .await
                     }
@@ -616,6 +633,7 @@ fn summarize_common_chat(chat: Chat) -> CommonChatSummary {
         kind: kind.to_string(),
         telegram_id: telegram_display_id(&chat),
         link: chat_public_link(&chat),
+        packed_hex: chat.pack().to_hex(),
     }
 }
 
@@ -1227,6 +1245,7 @@ fn write_user_profile_json(output_dir: &Path, p: &UserProfile) -> anyhow::Result
             "kind": c.kind,
             "telegram_id": c.telegram_id,
             "link": c.link,
+            "packed_hex": c.packed_hex,
         })).collect::<Vec<_>>(),
         "phone_calls_available": p.phone_calls_available,
         "video_calls_available": p.video_calls_available,
@@ -1369,4 +1388,170 @@ async fn enforce_phone_delay(path: &Path) {
         }
     }
     let _ = std::fs::write(path, format!("{now}"));
+}
+
+const DELETE_BATCH_SIZE: usize = 100;
+const DELETE_PROGRESS_EVERY: u64 = 100;
+
+fn flood_wait_seconds(err: &InvocationError) -> Option<u32> {
+    let InvocationError::Rpc(rpc) = err else {
+        return None;
+    };
+    if !rpc.name.contains("FLOOD") {
+        return None;
+    }
+    if let Some(v) = rpc.value {
+        return Some(v);
+    }
+    rpc.name
+        .strip_prefix("FLOOD_WAIT_")
+        .and_then(|s| s.parse().ok())
+}
+
+async fn send_delete_progress(
+    result_tx: &mpsc::Sender<UserEvent>,
+    chat_title: &str,
+    scanned: u64,
+    deleted: u64,
+    flood_wait_secs: Option<u32>,
+) {
+    let _ = result_tx
+        .send(UserEvent::DeleteMessagesProgress {
+            chat_title: chat_title.to_string(),
+            scanned,
+            deleted,
+            flood_wait_secs,
+        })
+        .await;
+}
+
+async fn delete_batch_with_retry(
+    client: &Client,
+    packed: PackedChat,
+    ids: &[i32],
+    chat_title: &str,
+    result_tx: &mpsc::Sender<UserEvent>,
+    scanned: u64,
+    deleted_so_far: u64,
+) -> Result<usize, ()> {
+    let mut attempt = 0u32;
+    loop {
+        match client.delete_messages(packed, ids).await {
+            Ok(n) => return Ok(n),
+            Err(e) => {
+                if let Some(secs) = flood_wait_seconds(&e) {
+                    send_delete_progress(
+                        result_tx,
+                        chat_title,
+                        scanned,
+                        deleted_so_far,
+                        Some(secs),
+                    )
+                    .await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64 + 1)).await;
+                    attempt += 1;
+                    if attempt > 100 {
+                        return Err(());
+                    }
+                    continue;
+                }
+                return Err(());
+            }
+        }
+    }
+}
+
+async fn delete_own_messages_with_progress(
+    client_slot: &Arc<Mutex<Option<Client>>>,
+    packed_hex: String,
+    chat_title: String,
+    result_tx: &mpsc::Sender<UserEvent>,
+) -> OpResult {
+    let client = take_client(client_slot).await?;
+    let packed = PackedChat::from_hex(packed_hex.trim())
+        .map_err(|_| UserEvent::err(ErrorKind::Generic, "invalid chat reference"))?;
+
+    let mut scanned: u64 = 0;
+    let mut deleted: u64 = 0;
+    let mut failed_batches: u32 = 0;
+    let mut pending: Vec<i32> = Vec::with_capacity(DELETE_BATCH_SIZE);
+
+    send_delete_progress(result_tx, &chat_title, 0, 0, None).await;
+
+    let mut iter = client.iter_messages(packed);
+    loop {
+        let msg = match iter.next().await {
+            Ok(Some(m)) => m,
+            Ok(None) => break,
+            Err(e) => {
+                if let Some(secs) = flood_wait_seconds(&e) {
+                    send_delete_progress(
+                        result_tx,
+                        &chat_title,
+                        scanned,
+                        deleted,
+                        Some(secs),
+                    )
+                    .await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64 + 1)).await;
+                    continue;
+                }
+                return Err(UserEvent::err(
+                    ErrorKind::Generic,
+                    format!("read history: {e}"),
+                ));
+            }
+        };
+        scanned += 1;
+        if msg.outgoing() {
+            pending.push(msg.id());
+            if pending.len() >= DELETE_BATCH_SIZE {
+                match delete_batch_with_retry(
+                    &client,
+                    packed,
+                    &pending,
+                    &chat_title,
+                    result_tx,
+                    scanned,
+                    deleted,
+                )
+                .await
+                {
+                    Ok(n) => deleted += n as u64,
+                    Err(()) => failed_batches += 1,
+                }
+                pending.clear();
+                send_delete_progress(result_tx, &chat_title, scanned, deleted, None).await;
+            }
+        }
+        if scanned % DELETE_PROGRESS_EVERY == 0 {
+            send_delete_progress(result_tx, &chat_title, scanned, deleted, None).await;
+        }
+    }
+
+    if !pending.is_empty() {
+        match delete_batch_with_retry(
+            &client,
+            packed,
+            &pending,
+            &chat_title,
+            result_tx,
+            scanned,
+            deleted,
+        )
+        .await
+        {
+            Ok(n) => deleted += n as u64,
+            Err(()) => failed_batches += 1,
+        }
+    }
+
+    send_delete_progress(result_tx, &chat_title, scanned, deleted, None).await;
+
+    Ok(UserEvent::DeleteMessagesFinished {
+        chat_title,
+        scanned,
+        deleted,
+        failed_batches,
+    })
 }

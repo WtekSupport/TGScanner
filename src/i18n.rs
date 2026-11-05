@@ -111,6 +111,9 @@ pub enum I18nKey {
     CardLabelBio,
     CardLabelFlags,
     AutoConnectLog,
+    CardDeleteHint,
+    CardDeleteDialogTitle,
+    CardDeleteDialogBody,
 }
 
 pub fn window_title() -> String {
@@ -321,6 +324,12 @@ pub fn t(lang: Lang, key: I18nKey) -> &'static str {
         (Lang::Ru, I18nKey::CardClose) => "Закрыть",
         (Lang::En, I18nKey::CardOpenTme) => "Open in Telegram",
         (Lang::Ru, I18nKey::CardOpenTme) => "Открыть в Telegram",
+        (Lang::En, I18nKey::CardDeleteHint) => "Delete my messages in this chat",
+        (Lang::Ru, I18nKey::CardDeleteHint) => "Удалить мои сообщения в этом чате",
+        (Lang::En, I18nKey::CardDeleteDialogTitle) => "Delete your messages?",
+        (Lang::Ru, I18nKey::CardDeleteDialogTitle) => "Удалить ваши сообщения?",
+        (Lang::En, I18nKey::CardDeleteDialogBody) => "TGScanner will scan the full chat history and delete messages you sent. When Telegram allows, they are removed for all participants (not just on this device). This cannot be undone. Large chats may take a long time; FloodWait pauses are normal.",
+        (Lang::Ru, I18nKey::CardDeleteDialogBody) => "TGScanner просмотрит всю историю чата и удалит отправленные вами сообщения. Если Telegram позволяет, они исчезнут у всех участников (не только у вас). Действие необратимо. В больших чатах операция может занять много времени; паузы FloodWait — нормальны.",
         (Lang::En, I18nKey::CardNoPhoto) => "No photo",
         (Lang::Ru, I18nKey::CardNoPhoto) => "Нет фото",
         (Lang::En, I18nKey::CardPhotoError) => "Photo unavailable",
@@ -539,6 +548,13 @@ pub fn format_event(lang: Lang, ev: &UserEvent) -> String {
             }
             s
         }
+        UserEvent::DeleteMessagesProgress { .. } => String::new(),
+        UserEvent::DeleteMessagesFinished {
+            chat_title,
+            scanned,
+            deleted,
+            failed_batches,
+        } => format_delete_finished(lang, chat_title, *scanned, *deleted, *failed_batches),
         UserEvent::Error { kind, detail } => format_error(lang, *kind, detail),
     }
 }
@@ -756,6 +772,63 @@ pub fn format_profile_flags(lang: Lang, p: &UserProfile) -> String {
         });
     }
     parts.join(" · ")
+}
+
+pub fn format_delete_progress_title(lang: Lang, chat_title: &str) -> String {
+    match lang {
+        Lang::En => format!("Deleting in «{chat_title}»"),
+        Lang::Ru => format!("Удаление в «{chat_title}»"),
+    }
+}
+
+pub fn format_delete_scanned(lang: Lang, n: u64) -> String {
+    match lang {
+        Lang::En => format!("Scanned: {n}"),
+        Lang::Ru => format!("Просмотрено: {n}"),
+    }
+}
+
+pub fn format_delete_deleted(lang: Lang, n: u64) -> String {
+    match lang {
+        Lang::En => format!("Deleted: {n}"),
+        Lang::Ru => format!("Удалено: {n}"),
+    }
+}
+
+pub fn format_delete_flood_wait(lang: Lang, secs: u32) -> String {
+    match lang {
+        Lang::En => format!("Telegram limit — waiting {secs} s…"),
+        Lang::Ru => format!("Лимит Telegram — пауза {secs} с…"),
+    }
+}
+
+fn format_delete_finished(
+    lang: Lang,
+    chat_title: &str,
+    scanned: u64,
+    deleted: u64,
+    failed_batches: u32,
+) -> String {
+    match lang {
+        Lang::En => {
+            let mut s = format!(
+                "Done «{chat_title}»: scanned {scanned}, deleted {deleted}."
+            );
+            if failed_batches > 0 {
+                s.push_str(&format!(" Failed batches: {failed_batches}."));
+            }
+            s
+        }
+        Lang::Ru => {
+            let mut s = format!(
+                "Готово «{chat_title}»: просмотрено {scanned}, удалено {deleted}."
+            );
+            if failed_batches > 0 {
+                s.push_str(&format!(" Неудачных пакетов: {failed_batches}."));
+            }
+            s
+        }
+    }
 }
 
 pub fn format_common_chats_section(lang: Lang, count: usize) -> String {

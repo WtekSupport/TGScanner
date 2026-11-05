@@ -1,5 +1,8 @@
-import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
-import { TelegramTheme, PrimaryButton, SecondaryButton, SectionTitle, FormLabel } from "theme.slint";
+import { VerticalBox, HorizontalBox, ScrollView, ProgressIndicator } from "std-widgets.slint";
+import {
+    TelegramTheme, PrimaryButton, SecondaryButton, SectionTitle, FormLabel, IconDeleteButton,
+    WrappingText
+} from "theme.slint";
 
 export struct ProfileField {
     label: string,
@@ -10,6 +13,69 @@ export struct ProfileChatLine {
     display: string,
     url: string,
     clickable: bool,
+    packed-hex: string,
+    chat-title: string,
+    deletable: bool,
+}
+
+/// Модальное подтверждение внутри окна (std Dialog на отдельном Window ломает вёрстку).
+export component DeleteMessagesConfirmDialog inherits Rectangle {
+    in-out property <string> title-text;
+    in-out property <string> body-text;
+    in-out property <string> ok-label;
+    in-out property <string> cancel-label;
+    callback confirmed(bool);
+
+    x: 0;
+    y: 0;
+    width: 100%;
+    height: 100%;
+    background: #0f1721cc;
+
+    TouchArea { }
+
+    VerticalBox {
+        width: 100%;
+        height: 100%;
+        alignment: center;
+        HorizontalBox {
+            alignment: center;
+            Rectangle {
+                width: min(420px, parent.width - 32px);
+                background: TelegramTheme.surface;
+                border-radius: 8px;
+                VerticalBox {
+                    padding: 20px;
+                    spacing: 12px;
+                    Text {
+                        text: root.title-text;
+                        color: TelegramTheme.text;
+                        font-weight: 600;
+                        font-size: 14px;
+                        wrap: word-wrap;
+                        width: 100%;
+                    }
+                    WrappingText {
+                        body: root.body-text;
+                        text-color: TelegramTheme.text;
+                        text-size: 12px;
+                    }
+                    HorizontalBox {
+                        spacing: 8px;
+                        alignment: end;
+                        PrimaryButton {
+                            text: root.ok-label;
+                            clicked => { root.confirmed(true); }
+                        }
+                        SecondaryButton {
+                            text: root.cancel-label;
+                            clicked => { root.confirmed(false); }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 export component ProfileFieldRow inherits HorizontalBox {
@@ -34,6 +100,39 @@ export component ProfileFieldRow inherits HorizontalBox {
     }
 }
 
+export component ProfileChatRow inherits HorizontalBox {
+    in property <ProfileChatLine> chat;
+    in property <bool> delete-running;
+    in property <string> delete-hint;
+    callback open-url(string);
+    callback delete-click(string, string);
+
+    spacing: 6px;
+    alignment: start;
+    padding: 3px;
+
+    TouchArea {
+        enabled: root.chat.clickable;
+        horizontal-stretch: 1;
+        clicked => { root.open-url(root.chat.url); }
+        Text {
+            text: root.chat.display;
+            color: root.chat.clickable ? TelegramTheme.accent : TelegramTheme.muted;
+            font-size: 12px;
+            wrap: word-wrap;
+            width: 100%;
+        }
+    }
+    IconDeleteButton {
+        visible: root.chat.deletable;
+        enabled: root.chat.deletable && !root.delete-running;
+        accessible-label: root.delete-hint;
+        clicked => {
+            root.delete-click(root.chat.packed-hex, root.chat.chat-title);
+        }
+    }
+}
+
 export component ProfileCardWindow inherits Window {
     preferred-width: 520px;
     preferred-height: 560px;
@@ -55,101 +154,180 @@ export component ProfileCardWindow inherits Window {
     in-out property <[ProfileField]> fields;
     in-out property <[ProfileChatLine]> chats;
 
+    in-out property <string> delete-hint;
+    in-out property <bool> delete-running;
+    in-out property <bool> delete-dialog-visible;
+    in-out property <string> delete-dialog-title;
+    in-out property <string> delete-dialog-body;
+    in-out property <string> delete-dialog-ok;
+    in-out property <string> delete-dialog-cancel;
+    in-out property <string> pending-delete-hex;
+    in-out property <string> pending-delete-title;
+
+    in-out property <bool> progress-visible;
+    in-out property <string> progress-title;
+    in-out property <string> progress-scanned-label;
+    in-out property <string> progress-deleted-label;
+    in-out property <string> progress-wait-label;
+
     callback open-url(string);
     callback close-window();
+    callback delete-confirmed(bool);
+    callback delete-click(string, string);
 
     title: root.window-title;
 
-    VerticalBox {
-        padding: 12px;
-        spacing: 8px;
+    root-layer := Rectangle {
+        width: 100%;
+        height: 100%;
 
-        HorizontalBox {
-            spacing: 10px;
-            alignment: start;
-            Rectangle {
-                width: 72px;
-                height: 72px;
-                background: TelegramTheme.surface;
-                border-radius: 4px;
-                Image {
-                    source: root.profile-photo;
-                    visible: root.has-photo;
+        VerticalBox {
+            width: 100%;
+            height: 100%;
+            padding: 12px;
+            spacing: 8px;
+
+            HorizontalBox {
+                spacing: 10px;
+                alignment: start;
+                Rectangle {
                     width: 72px;
                     height: 72px;
-                    image-fit: cover;
+                    background: TelegramTheme.surface;
+                    border-radius: 4px;
+                    Image {
+                        source: root.profile-photo;
+                        visible: root.has-photo;
+                        width: 72px;
+                        height: 72px;
+                        image-fit: cover;
+                    }
+                }
+                VerticalBox {
+                    spacing: 2px;
+                    vertical-stretch: 1;
+                    Text {
+                        text: root.header-name;
+                        color: TelegramTheme.text;
+                        font-size: 15px;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.header-sub;
+                        color: TelegramTheme.muted;
+                        font-size: 11px;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.badges;
+                        color: TelegramTheme.muted;
+                        font-size: 10px;
+                        wrap: word-wrap;
+                    }
                 }
             }
-            VerticalBox {
-                spacing: 2px;
+
+            ScrollView {
                 vertical-stretch: 1;
-                Text {
-                    text: root.header-name;
-                    color: TelegramTheme.text;
-                    font-size: 15px;
-                    font-weight: 600;
-                    wrap: word-wrap;
+                VerticalBox {
+                    spacing: 2px;
+                    padding: 0;
+                    SectionTitle { text: root.section-details; }
+                    for field[idx] in root.fields: ProfileFieldRow {
+                        label: field.label;
+                        value: field.value;
+                    }
+                    SectionTitle { text: root.section-chats; }
+                    for chat[idx] in root.chats: ProfileChatRow {
+                        chat: chat;
+                        delete-running: root.delete-running;
+                        delete-hint: root.delete-hint;
+                        open-url(url) => { root.open-url(url); }
+                        delete-click(hex, title) => { root.delete-click(hex, title); }
+                    }
+                    if root.json-path != "": ProfileFieldRow {
+                        label: "JSON";
+                        value: root.json-path;
+                    }
                 }
-                Text {
-                    text: root.header-sub;
-                    color: TelegramTheme.muted;
-                    font-size: 11px;
-                    wrap: word-wrap;
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                PrimaryButton {
+                    text: root.open-tme-label;
+                    enabled: root.tme-enabled && !root.delete-running;
+                    min-width: 180px;
+                    horizontal-stretch: 1;
+                    clicked => { root.open-url(root.tme-url); }
                 }
-                Text {
-                    text: root.badges;
-                    color: TelegramTheme.muted;
-                    font-size: 10px;
-                    wrap: word-wrap;
+                SecondaryButton {
+                    text: root.close-label;
+                    enabled: !root.delete-running;
+                    min-width: 120px;
+                    clicked => { root.close-window(); }
                 }
             }
         }
 
-        ScrollView {
-            vertical-stretch: 1;
-            VerticalBox {
-                spacing: 2px;
-                padding: 0;
-                SectionTitle { text: root.section-details; }
-                for field[idx] in root.fields: ProfileFieldRow {
-                    label: field.label;
-                    value: field.value;
-                }
-                SectionTitle { text: root.section-chats; }
-                for chat[idx] in root.chats: TouchArea {
-                    enabled: chat.clickable;
-                    clicked => { root.open-url(chat.url); }
-                    HorizontalBox {
-                        padding: 3px;
+        if root.delete-dialog-visible: DeleteMessagesConfirmDialog {
+            title-text: root.delete-dialog-title;
+            body-text: root.delete-dialog-body;
+            ok-label: root.delete-dialog-ok;
+            cancel-label: root.delete-dialog-cancel;
+            confirmed(ok) => {
+                root.delete-dialog-visible = false;
+                root.delete-confirmed(ok);
+            }
+        }
+
+        if root.progress-visible: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            background: #0f1721cc;
+            TouchArea { }
+            HorizontalBox {
+                alignment: center;
+                Rectangle {
+                    width: 300px;
+                    background: TelegramTheme.surface;
+                    border-radius: 8px;
+                    VerticalBox {
+                        padding: 20px;
+                        spacing: 10px;
+                        alignment: center;
                         Text {
-                            text: chat.display;
-                            color: chat.clickable ? TelegramTheme.accent : TelegramTheme.muted;
-                            font-size: 12px;
+                            text: root.progress-title;
+                            color: TelegramTheme.text;
+                            font-weight: 600;
                             wrap: word-wrap;
-                            horizontal-stretch: 1;
+                            width: 100%;
+                        }
+                        ProgressIndicator { indeterminate: true; }
+                        Text {
+                            text: root.progress-scanned-label;
+                            color: TelegramTheme.text;
+                            font-size: 12px;
+                            width: 100%;
+                        }
+                        Text {
+                            text: root.progress-deleted-label;
+                            color: TelegramTheme.text;
+                            font-size: 12px;
+                            width: 100%;
+                        }
+                        if root.progress-wait-label != "": Text {
+                            text: root.progress-wait-label;
+                            color: TelegramTheme.muted;
+                            font-size: 11px;
+                            wrap: word-wrap;
+                            width: 100%;
                         }
                     }
                 }
-                if root.json-path != "": ProfileFieldRow {
-                    label: "JSON";
-                    value: root.json-path;
-                }
-            }
-        }
-
-        HorizontalBox {
-            spacing: 8px;
-            PrimaryButton {
-                text: root.open-tme-label;
-                enabled: root.tme-enabled;
-                min-width: 180px;
-                horizontal-stretch: 1;
-                clicked => { root.open-url(root.tme-url); }
-            }
-            SecondaryButton {
-                text: root.close-label;
-                min-width: 120px;
-                clicked => { root.close-window(); }
             }
         }
     }
