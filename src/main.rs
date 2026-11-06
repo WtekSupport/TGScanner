@@ -3,6 +3,8 @@
 mod browser;
 mod config;
 mod crash_log;
+mod group_map_layout;
+mod group_map_model;
 mod i18n;
 mod profile_model;
 mod secure_store;

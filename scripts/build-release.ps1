@@ -1,8 +1,10 @@
-# Builds tgscanner.exe into .\target\release (NOT Cursor sandbox cache).
+# Builds tgscanner.exe into .\target\release (NOT Cursor sandbox CARGO_TARGET_DIR cache).
 $ErrorActionPreference = "Stop"
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Set-Location $ProjectRoot
 Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
-Set-Location (Join-Path $PSScriptRoot "..")
-cargo build --release --locked
-$exe = Join-Path (Get-Location) "target\release\tgscanner.exe"
+$targetDir = Join-Path $ProjectRoot "target"
+cargo build --release --locked --target-dir $targetDir
+$exe = Join-Path $targetDir "release\tgscanner.exe"
 Get-Item -LiteralPath $exe | Format-List FullName, Length, LastWriteTime
 Write-Host "Run: $exe"

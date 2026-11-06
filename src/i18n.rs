@@ -77,6 +77,7 @@ pub enum I18nKey {
     WelcomeLog,
     Busy,
     PreloaderWorking,
+    BusyGroupMap,
     WorkerSendFailed,
     FillHashPhone,
     EmptyLookup,
@@ -114,6 +115,18 @@ pub enum I18nKey {
     CardDeleteHint,
     CardDeleteDialogTitle,
     CardDeleteDialogBody,
+    BtnGroupMap,
+    GroupMapWindowTitle,
+    GroupMapSubtitle,
+    GroupMapLegendSelf,
+    GroupMapLegendUser,
+    GroupMapLegendGroup,
+    GroupMapInteractionHint,
+    LblGroupMapDepth,
+    HintGroupMapDepth,
+    GroupMapEmptyDepth,
+    ErrGroupMapDepthNaN,
+    GroupMapStarted,
 }
 
 pub fn window_title() -> String {
@@ -262,6 +275,8 @@ pub fn t(lang: Lang, key: I18nKey) -> &'static str {
         (Lang::Ru, I18nKey::Busy) => "Подождите, выполняется предыдущая операция…",
         (Lang::En, I18nKey::PreloaderWorking) => "Working…",
         (Lang::Ru, I18nKey::PreloaderWorking) => "Выполняется…",
+        (Lang::En, I18nKey::BusyGroupMap) => "Building group map (may take a while)…",
+        (Lang::Ru, I18nKey::BusyGroupMap) => "Строится карта групп (может занять время)…",
         (Lang::En, I18nKey::WorkerSendFailed) => "Could not send command to worker.",
         (Lang::Ru, I18nKey::WorkerSendFailed) => "Не удалось отправить команду воркеру.",
         (Lang::En, I18nKey::FillHashPhone) => "Enter API hash and phone.",
@@ -360,6 +375,93 @@ pub fn t(lang: Lang, key: I18nKey) -> &'static str {
         (Lang::Ru, I18nKey::CardLabelBio) => "Bio",
         (Lang::En, I18nKey::CardLabelFlags) => "Flags",
         (Lang::Ru, I18nKey::CardLabelFlags) => "Метки",
+        (Lang::En, I18nKey::BtnGroupMap) => "Group map",
+        (Lang::Ru, I18nKey::BtnGroupMap) => "Карта групп",
+        (Lang::En, I18nKey::GroupMapWindowTitle) => "Group map — TGScanner",
+        (Lang::Ru, I18nKey::GroupMapWindowTitle) => "Карта групп — TGScanner",
+        (Lang::En, I18nKey::GroupMapSubtitle) => {
+            "Focused graph: enter the target in Lookup (username, numeric ID, or t.me/… URL) — a supergroup/megagroup, or a user (first shared supergroup is used as anchor). Depth 1: anchor participants + which of them share other groups together; depth 2+: also adds more shared groups per participant (API-limited)."
+        }
+        (Lang::Ru, I18nKey::GroupMapSubtitle) => {
+            "Локальный граф: укажите цель в поле «Поиск» (username, числовой ID или t.me/…) — супергруппу/мегагруппу или пользователя (берётся первая общая супергруппа как якорь). Глубина 1: участники якоря и их общие группы между собой; глубина 2+: дополнительно другие общие группы по участникам (ограничения API)."
+        }
+        (Lang::En, I18nKey::GroupMapLegendSelf) => "● You",
+        (Lang::Ru, I18nKey::GroupMapLegendSelf) => "● Вы",
+        (Lang::En, I18nKey::GroupMapLegendUser) => "● People",
+        (Lang::Ru, I18nKey::GroupMapLegendUser) => "● Люди",
+        (Lang::En, I18nKey::GroupMapLegendGroup) => "● Groups",
+        (Lang::Ru, I18nKey::GroupMapLegendGroup) => "● Группы",
+        (Lang::En, I18nKey::GroupMapInteractionHint) => {
+            "Drag with the left mouse button to pan · Mouse wheel to zoom (0.08×–14×)."
+        }
+        (Lang::Ru, I18nKey::GroupMapInteractionHint) => {
+            "Перемещение: зажать левую кнопку мыши и тащить · Масштаб: колёсико (0,08×–14×)."
+        }
+        (Lang::En, I18nKey::LblGroupMapDepth) => "Map depth (1–5)",
+        (Lang::Ru, I18nKey::LblGroupMapDepth) => "Глубина карты (1–5)",
+        (Lang::En, I18nKey::HintGroupMapDepth) => {
+            "1 = anchor group only; 2+ = also pull more shared supergroups from participants (slower, still capped)."
+        }
+        (Lang::Ru, I18nKey::HintGroupMapDepth) => {
+            "1 = только якорная группа; 2+ = ещё общие супергруппы участников (медленнее, с лимитами)."
+        }
+        (Lang::En, I18nKey::GroupMapEmptyDepth) => "Enter map depth (number 1–5).",
+        (Lang::Ru, I18nKey::GroupMapEmptyDepth) => "Укажите глубину карты (число 1–5).",
+        (Lang::En, I18nKey::ErrGroupMapDepthNaN) => "Depth must be a number (1–5).",
+        (Lang::Ru, I18nKey::ErrGroupMapDepthNaN) => "Глубина должна быть числом (1–5).",
+        (Lang::En, I18nKey::GroupMapStarted) => {
+            "Group map: starting (this may take a while; see progress lines below)…"
+        }
+        (Lang::Ru, I18nKey::GroupMapStarted) => {
+            "Карта групп: запуск (может занять время; см. строки прогресса ниже)…"
+        }
+    }
+}
+
+/// One line for the main window journal while building the group map (keeps UI responsive-looking).
+pub fn format_group_map_progress_journal(
+    lang: Lang,
+    message: &str,
+    dialogs_scanned: usize,
+    groups_done: usize,
+    users_seen: usize,
+) -> String {
+    match lang {
+        Lang::En => format!(
+            "Group map: {message} (dialogs {dialogs_scanned}, groups {groups_done}, users ~{users_seen})"
+        ),
+        Lang::Ru => format!(
+            "Карта групп: {message} (диалогов {dialogs_scanned}, групп {groups_done}, пользователей ~{users_seen})"
+        ),
+    }
+}
+
+/// Stats line under the group map subtitle.
+pub fn format_group_map_stats(
+    lang: Lang,
+    anchor: &str,
+    depth: u32,
+    dialogs: usize,
+    groups: usize,
+    users: usize,
+    edges: usize,
+    errors: &[String],
+) -> String {
+    let err_note = if errors.is_empty() {
+        String::new()
+    } else {
+        match lang {
+            Lang::En => format!(" Warnings: {}.", errors.len()),
+            Lang::Ru => format!(" Предупреждений: {}.", errors.len()),
+        }
+    };
+    match lang {
+        Lang::En => format!(
+            "Anchor: {anchor}. Depth: {depth}. Dialogs scanned: {dialogs}. Groups processed: {groups}. People: {users}. Links: {edges}.{err_note}"
+        ),
+        Lang::Ru => format!(
+            "Якорь: {anchor}. Глубина: {depth}. Диалогов просмотрено: {dialogs}. Групп обработано: {groups}. Людей: {users}. Связей: {edges}.{err_note}"
+        ),
     }
 }
 
@@ -549,6 +651,39 @@ pub fn format_event(lang: Lang, ev: &UserEvent) -> String {
             s
         }
         UserEvent::DeleteMessagesProgress { .. } => String::new(),
+        UserEvent::GroupMapProgress {
+            message,
+            dialogs_scanned,
+            groups_done,
+            users_seen,
+        } => match lang {
+            Lang::En => format!(
+                "Group map: {message} (dialogs {dialogs_scanned}, groups {groups_done}, users ~{users_seen})"
+            ),
+            Lang::Ru => format!(
+                "Карта групп: {message} (диалогов {dialogs_scanned}, групп {groups_done}, пользователей ~{users_seen})"
+            ),
+        },
+        UserEvent::GroupMapReady(m) => match lang {
+            Lang::En => format!(
+                "Group map ready — anchor: {}, depth {} — {} dialogs, {} groups, {} people ({} edges).",
+                m.anchor_label,
+                m.depth,
+                m.dialogs_scanned,
+                m.groups_processed,
+                m.users_found,
+                m.edges.len()
+            ),
+            Lang::Ru => format!(
+                "Карта групп готова — якорь: {}, глубина {} — {} диалогов, {} групп, {} людей (связей {}).",
+                m.anchor_label,
+                m.depth,
+                m.dialogs_scanned,
+                m.groups_processed,
+                m.users_found,
+                m.edges.len()
+            ),
+        },
         UserEvent::DeleteMessagesFinished {
             chat_title,
             scanned,

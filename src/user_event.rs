@@ -60,6 +60,36 @@ pub struct GroupProfile {
     pub json_path: Option<PathBuf>,
 }
 
+/// Node in the group membership graph (users and group chats).
+#[derive(Clone, Debug)]
+pub struct GroupMapNode {
+    /// Stable id: positive = user id, negative = encoded chat id (see `group_map_layout`).
+    pub id: i64,
+    pub label: String,
+    /// 0 = self, 1 = user, 2 = group/megagroup (Slint `kind`).
+    pub kind: i32,
+}
+
+#[derive(Clone, Debug)]
+pub struct GroupMapEdge {
+    pub user_id: i64,
+    pub chat_id: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct GroupMapReady {
+    pub nodes: Vec<GroupMapNode>,
+    pub edges: Vec<GroupMapEdge>,
+    /// Short description of the anchor (resolved group/channel/user), for the stats line.
+    pub anchor_label: String,
+    /// Expansion depth requested (1 = anchor participants + their shared groups; 2+ adds more shared groups among participants).
+    pub depth: u32,
+    pub dialogs_scanned: usize,
+    pub groups_processed: usize,
+    pub users_found: usize,
+    pub errors: Vec<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ChannelProfile {
     pub id: i64,
@@ -117,6 +147,14 @@ pub enum UserEvent {
         deleted: u64,
         failed_batches: u32,
     },
+    /// Building group map from dialogs (keeps busy; progress lines go to log).
+    GroupMapProgress {
+        message: String,
+        dialogs_scanned: usize,
+        groups_done: usize,
+        users_seen: usize,
+    },
+    GroupMapReady(GroupMapReady),
     Error {
         kind: ErrorKind,
         detail: String,

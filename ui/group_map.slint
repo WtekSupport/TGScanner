@@ -1,0 +1,218 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import {
+    TelegramTheme, PrimaryButton, SecondaryButton, SectionTitle, WrappingText
+} from "theme.slint";
+
+export struct GroupMapNodeSlot {
+    kind: int,
+    label: string,
+    rel-x: float,
+    rel-y: float,
+}
+
+/// Graph viewport: pan (drag) + zoom (wheel). Canvas size comes from Rust (`graph-w` × `graph-h`).
+export component GroupMapWindow inherits Window {
+    preferred-width: 720px;
+    preferred-height: 620px;
+    min-width: 640px;
+    min-height: 480px;
+    background: TelegramTheme.bg;
+
+    in-out property <string> window-title;
+    in-out property <string> subtitle-text;
+    in-out property <string> stats-text;
+    in-out property <string> legend-self;
+    in-out property <string> legend-user;
+    in-out property <string> legend-group;
+    in-out property <string> edge-path-commands;
+    in-out property <[GroupMapNodeSlot]> map-nodes;
+    in-out property <string> close-label;
+    in-out property <string> map-hint-text;
+
+    /// View transform (persisted when refreshing data from Rust).
+    in-out property <float> map-scale: 1.0;
+    in-out property <length> map-pan-x: 0px;
+    in-out property <length> map-pan-y: 0px;
+
+    /// Logical canvas size used for layout (grows with node count for spacing).
+    in-out property <length> graph-w: 640px;
+    in-out property <length> graph-h: 400px;
+
+    callback close-window();
+    /// Fit entire graph into the viewport (called after data load / resize).
+    callback fit-map-view();
+
+    title: root.window-title;
+
+    fit-map-view => {
+        let vw = map-viewport.width;
+        let vh = map-viewport.height;
+        if (vw < 8px || vh < 8px) {
+            return;
+        }
+        let margin = 12px;
+        let aw = vw - 2 * margin;
+        let ah = vh - 2 * margin;
+        if (aw <= 0px || ah <= 0px) {
+            return;
+        }
+        let sx = aw / root.graph-w;
+        let sy = ah / root.graph-h;
+        root.map-scale = min(sx, sy);
+        root.map-pan-x = margin + (aw - root.graph-w * root.map-scale) / 2;
+        root.map-pan-y = margin + (ah - root.graph-h * root.map-scale) / 2;
+    }
+
+    VerticalBox {
+        padding: 14px;
+        spacing: 8px;
+        width: 100%;
+        height: 100%;
+
+        SectionTitle { text: root.subtitle-text; }
+        WrappingText {
+            body: root.stats-text;
+            text-color: TelegramTheme.muted;
+            text-size: 11px;
+        }
+        HorizontalBox {
+            spacing: 16px;
+            Text { text: root.legend-self; color: TelegramTheme.accent; font-size: 11px; }
+            Text { text: root.legend-user; color: TelegramTheme.muted; font-size: 11px; }
+            Text { text: root.legend-group; color: TelegramTheme.accent; font-size: 11px; }
+        }
+        if root.map-hint-text != "": WrappingText {
+            body: root.map-hint-text;
+            text-color: TelegramTheme.muted;
+            text-size: 10px;
+        }
+
+        map-viewport := Rectangle {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            min-height: 400px;
+            background: TelegramTheme.log-bg;
+            border-radius: 6px;
+            clip: true;
+
+            graph-content := Rectangle {
+                x: root.map-pan-x;
+                y: root.map-pan-y;
+                width: root.graph-w;
+                height: root.graph-h;
+                transform-origin: { x: 0px, y: 0px };
+                transform-scale-x: root.map-scale * 100%;
+                transform-scale-y: root.map-scale * 100%;
+                background: transparent;
+
+                Path {
+                    width: 100%;
+                    height: 100%;
+                    // Path commands use the same coordinate system as node positions (0…graph-w, 0…graph-h).
+                    // Without an explicit viewbox, Slint uses the bbox of stroke segments only and scales it
+                    // with ImageFit.contain — lines no longer match nodes; fill maps the full canvas 1:1.
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: root.graph-w / 1px;
+                    viewbox-height: root.graph-h / 1px;
+                    fit: ImageFit.fill;
+                    commands: root.edge-path-commands;
+                    fill: transparent;
+                    stroke: #4488cc80;
+                    stroke-width: max(0.5px, 1.2px / root.map-scale);
+                }
+
+                // Dots at (rel-x, rel-y) match edge endpoints from layout; labels offset sideways (not centered on HorizontalBox).
+                for node[idx] in root.map-nodes: Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    background: transparent;
+
+                    property <length> cx: graph-content.width * node.rel-x;
+                    property <length> cy: graph-content.height * node.rel-y;
+                    property <length> diam: max(6px, 10px / root.map-scale);
+                    property <length> fs: max(9px, 11px / root.map-scale);
+                    property <length> label-max-w: min(240px, 180px / root.map-scale);
+
+                    Rectangle {
+                        x: cx - diam / 2;
+                        y: cy - diam / 2;
+                        width: diam;
+                        height: diam;
+                        border-radius: self.width / 2;
+                        background: node.kind == 0 ? TelegramTheme.accent : (node.kind == 2 ? #5e9fe0 : TelegramTheme.muted);
+                    }
+                    if node.kind != 2: Text {
+                        text: node.label;
+                        color: TelegramTheme.text;
+                        font-size: fs;
+                        wrap: word-wrap;
+                        width: label-max-w;
+                        x: cx + diam / 2 + 5px;
+                        y: cy - fs * 0.55;
+                    }
+                    if node.kind == 2: Text {
+                        text: node.label;
+                        color: TelegramTheme.text;
+                        font-size: fs;
+                        wrap: word-wrap;
+                        width: label-max-w;
+                        horizontal-alignment: right;
+                        x: cx - diam / 2 - 5px - label-max-w;
+                        y: cy - fs * 0.55;
+                    }
+                }
+            }
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+
+                property <length> drag-anchor-x;
+                property <length> drag-anchor-y;
+                property <length> pan-anchor-x;
+                property <length> pan-anchor-y;
+
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                        self.drag-anchor-x = self.mouse-x;
+                        self.drag-anchor-y = self.mouse-y;
+                        self.pan-anchor-x = root.map-pan-x;
+                        self.pan-anchor-y = root.map-pan-y;
+                    }
+                }
+
+                moved => {
+                    if (self.pressed) {
+                        root.map-pan-x = self.pan-anchor-x + self.mouse-x - self.drag-anchor-x;
+                        root.map-pan-y = self.pan-anchor-y + self.mouse-y - self.drag-anchor-y;
+                    }
+                }
+
+                scroll-event(event) => {
+                    if (event.delta-y == 0) {
+                        return reject;
+                    }
+                    let old-s = root.map-scale;
+                    let factor = event.delta-y < 0 ? 1.08 : 0.92;
+                    let new-s = max(0.08, min(14.0, old-s * factor));
+                    // Zoom toward viewport center
+                    let cx = map-viewport.width / 2;
+                    let cy = map-viewport.height / 2;
+                    root.map-pan-x = cx - (cx - root.map-pan-x) * (new-s / old-s);
+                    root.map-pan-y = cy - (cy - root.map-pan-y) * (new-s / old-s);
+                    root.map-scale = new-s;
+                    return accept;
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: end;
+            SecondaryButton {
+                text: root.close-label;
+                clicked => { root.close-window(); }
+            }
+        }
+    }
+}

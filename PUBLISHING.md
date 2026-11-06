@@ -120,8 +120,14 @@ Manual alternative: download artifacts from a green **CI** run and attach them i
 
 ## Local release build (Windows)
 
+Some IDE/sandbox environments set `CARGO_TARGET_DIR` to a temp cache folder, so `target/release/tgscanner.exe` under the repo may look stale or missing. Use the script (forces output into this repo’s `target/`) or pass `--target-dir` explicitly:
+
+```powershell
+.\scripts\build-release.ps1
+```
+
 ```bash
-cargo build --release --locked
+cargo build --release --locked --target-dir ./target
 # Binary: target/release/tgscanner.exe
 ```
 

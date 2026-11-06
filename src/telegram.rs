@@ -2,8 +2,8 @@ use crate::config::AppConfig;
 use crate::crash_log;
 use crate::secure_store;
 use crate::user_event::{
-    ChannelProfile, CommonChatSummary, ErrorKind, GroupProfile, PhotoResult, UserEvent,
-    UserProfile,
+    ChannelProfile, CommonChatSummary, ErrorKind, GroupMapEdge, GroupMapNode, GroupMapReady,
+    GroupProfile, PhotoResult, UserEvent, UserProfile,
 };
 use anyhow::anyhow;
 use grammers_client::types::{Channel, Chat, Downloadable, Group, Media, User};
@@ -11,12 +11,20 @@ use grammers_client::{Client, Config, SignInError};
 use grammers_client::InvocationError;
 use grammers_session::{PackedChat, PackedType, Session};
 use grammers_tl_types as tl;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 const PHONE_DELAY_SECS: u64 = 3;
 const TELEGRAM_CHANNEL_BASE: i64 = 1_000_000_000_000;
+
+/// Limits for group-map scan (participants / expansions).
+const GROUP_MAP_MAX_PARTICIPANTS_PER_CHAT: usize = 500;
+const GROUP_MAP_API_DELAY_MS: u64 = 50;
+/// If Telegram/network stalls on participant pagination, stop waiting so the UI can recover.
+const GROUP_MAP_PARTICIPANT_ITER_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
 
 type OpResult = std::result::Result<UserEvent, UserEvent>;
 type IoResult<T> = std::result::Result<T, UserEvent>;
@@ -54,6 +62,13 @@ pub enum WorkerCommand {
         packed_hex: String,
         chat_title: String,
     },
+    /// Build a focused membership graph: resolve **Lookup** query (same modes as lookup) as anchor,
+    /// then depth 1 = that chat's participants + edges to anchor and shared groups among them; depth ≥ 2 adds more shared groups.
+    BuildGroupMap {
+        lookup_mode: i32,
+        query: String,
+        depth: u32,
+    },
 }
 
 pub struct TelegramHandle {
@@ -62,7 +77,8 @@ pub struct TelegramHandle {
 
 pub fn spawn_worker(base_dir: PathBuf) -> (TelegramHandle, mpsc::Receiver<UserEvent>) {
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<WorkerCommand>(32);
-    let (result_tx, result_rx) = mpsc::channel::<UserEvent>(64);
+    // Group map can emit many progress lines; a small channel blocks the worker on `send().await`.
+    let (result_tx, result_rx) = mpsc::channel::<UserEvent>(512);
     let phone_state_path = base_dir.join(".tguser_phone_lookup_ts");
 
     std::thread::spawn(move || {
@@ -169,6 +185,14 @@ pub fn spawn_worker(base_dir: PathBuf) -> (TelegramHandle, mpsc::Receiver<UserEv
                             &result_tx,
                         )
                         .await
+                    }
+                    WorkerCommand::BuildGroupMap {
+                        lookup_mode,
+                        query,
+                        depth,
+                    } => {
+                        build_group_map(&base_dir, &client, &result_tx, lookup_mode, query, depth)
+                            .await
                     }
                 };
 
@@ -550,14 +574,151 @@ fn telegram_display_id(chat: &Chat) -> i64 {
 }
 
 async fn packed_from_dialogs(client: &Client, telegram_id: i64) -> Option<PackedChat> {
+    let (_n, p) = packed_from_dialogs_counted(client, telegram_id).await;
+    p
+}
+
+/// Like [`packed_from_dialogs`], but returns how many dialog rows were scanned.
+async fn packed_from_dialogs_counted(
+    client: &Client,
+    telegram_id: i64,
+) -> (usize, Option<PackedChat>) {
+    let mut scanned = 0usize;
     let mut dialogs = client.iter_dialogs();
-    while let Ok(Some(dialog)) = dialogs.next().await {
+    loop {
+        let dialog = match dialogs.next().await {
+            Ok(Some(d)) => d,
+            Ok(None) => break,
+            Err(_) => break,
+        };
+        scanned += 1;
         let chat = dialog.chat();
         if telegram_display_id(&chat) == telegram_id {
-            return Some(chat.pack());
+            return (scanned, Some(chat.pack()));
         }
     }
-    None
+    (scanned, None)
+}
+
+fn chat_title_for_anchor(chat: &Chat) -> String {
+    match chat {
+        Chat::User(u) => u.full_name(),
+        Chat::Group(g) => g.title().to_string(),
+        Chat::Channel(c) => c.title().to_string(),
+    }
+}
+
+/// Supergroups and small groups — both support participant iteration. (`Chat::Channel` here is broadcast-only.)
+fn is_group_or_megagroup_chat(chat: &Chat) -> bool {
+    matches!(chat, Chat::Group(_))
+}
+
+async fn resolve_phone_to_user_chat(client: &Client, phone: &str) -> Result<Chat, UserEvent> {
+    let phone = normalize_phone_e164(phone)?;
+    let contact = tl::types::InputPhoneContact {
+        client_id: 0,
+        phone: phone.clone(),
+        first_name: "Lookup".into(),
+        last_name: "Temporary".into(),
+    };
+    let imported = client
+        .invoke(&tl::functions::contacts::ImportContacts {
+            contacts: vec![tl::enums::InputContact::InputPhoneContact(contact)],
+        })
+        .await
+        .map_err(|e| UserEvent::err(ErrorKind::ImportContacts, format!("group map import: {e}")))?;
+
+    let users = match imported {
+        tl::enums::contacts::ImportedContacts::Contacts(c) => c.users,
+    };
+    if users.is_empty() {
+        return Err(UserEvent::err(ErrorKind::Generic, "group map: phone not found"));
+    }
+
+    let user = User::from_raw(users[0].clone());
+    if let Some(input) = user.pack().try_to_input_user() {
+        let _ = client
+            .invoke(&tl::functions::contacts::DeleteContacts { id: vec![input] })
+            .await;
+    }
+
+    Ok(Chat::User(user))
+}
+
+/// Resolve the Lookup field the same way as a profile lookup, plus `t.me/username` URLs (channel part only).
+async fn resolve_group_map_anchor_chat(
+    client: &Client,
+    base_dir: &Path,
+    lookup_mode: i32,
+    query: &str,
+) -> Result<(Chat, String, usize), UserEvent> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Err(UserEvent::err(
+            ErrorKind::Generic,
+            "group map: enter username, ID, phone, or URL in Lookup",
+        ));
+    }
+
+    match lookup_mode {
+        0 => {
+            let name = q.trim_start_matches('@');
+            let chat = client
+                .resolve_username(name)
+                .await
+                .map_err(|e| UserEvent::err(ErrorKind::Generic, format!("{e}")))?
+                .ok_or_else(|| UserEvent::err(ErrorKind::NotFoundUsername, format!("@{name}")))?;
+            let title = chat_title_for_anchor(&chat);
+            Ok((chat, title, 0))
+        }
+        1 => {
+            let id: i64 = q
+                .parse()
+                .map_err(|_| UserEvent::err(ErrorKind::Generic, "group map: ID must be a number"))?;
+            let mut packed = packed_from_numeric_id(id)
+                .ok_or_else(|| UserEvent::err(ErrorKind::UnsupportedId, ""))?;
+            let mut dialogs_scanned = 0usize;
+            if packed_needs_access_hash(&packed) && usable_access_hash(packed.access_hash).is_none() {
+                let (n, from_dialogs) = packed_from_dialogs_counted(client, id).await;
+                dialogs_scanned = dialogs_scanned.saturating_add(n);
+                if let Some(p) = from_dialogs {
+                    if usable_access_hash(p.access_hash).is_some() {
+                        packed = p;
+                    }
+                }
+            }
+            if packed_needs_access_hash(&packed) && usable_access_hash(packed.access_hash).is_none() {
+                if let Some(from_contacts) = packed_from_contacts(client, id).await {
+                    if usable_access_hash(from_contacts.access_hash).is_some() {
+                        packed = from_contacts;
+                    }
+                }
+            }
+            if packed_needs_access_hash(&packed) && usable_access_hash(packed.access_hash).is_none() {
+                return Err(UserEvent::err(ErrorKind::UnpackChat, ""));
+            }
+            let chat = fetch_chat_by_packed(client, packed).await?;
+            let title = chat_title_for_anchor(&chat);
+            Ok((chat, title, dialogs_scanned))
+        }
+        2 => {
+            enforce_phone_delay(base_dir.join(".tguser_phone_lookup_ts").as_path()).await;
+            let chat = resolve_phone_to_user_chat(client, q).await?;
+            let title = chat_title_for_anchor(&chat);
+            Ok((chat, title, 0))
+        }
+        3 => {
+            let (channel, _msg_id) = parse_tme_url(q)?;
+            let chat = client
+                .resolve_username(&channel)
+                .await
+                .map_err(|e| UserEvent::err(ErrorKind::Generic, format!("{e}")))?
+                .ok_or_else(|| UserEvent::err(ErrorKind::NotFoundUsername, channel))?;
+            let title = chat_title_for_anchor(&chat);
+            Ok((chat, title, 0))
+        }
+        _ => Err(UserEvent::err(ErrorKind::Generic, "group map: invalid lookup mode")),
+    }
 }
 
 async fn packed_from_contacts(client: &Client, telegram_id: i64) -> Option<PackedChat> {
@@ -1392,6 +1553,378 @@ async fn enforce_phone_delay(path: &Path) {
 
 const DELETE_BATCH_SIZE: usize = 100;
 const DELETE_PROGRESS_EVERY: u64 = 100;
+
+async fn send_group_map_progress(
+    result_tx: &mpsc::Sender<UserEvent>,
+    message: &str,
+    dialogs_scanned: usize,
+    groups_done: usize,
+    users_seen: usize,
+) {
+    let _ = result_tx
+        .send(UserEvent::GroupMapProgress {
+            message: message.to_string(),
+            dialogs_scanned,
+            groups_done,
+            users_seen,
+        })
+        .await;
+}
+
+/// For depth ≥ 2: max “other” megagroups/supergroups to add via GetCommonChats per participant.
+const GROUP_MAP_EXPAND_MAX_CHATS_PER_USER: usize = 24;
+/// For depth ≥ 2: max participants for whom we call GetCommonChats (rest stay only on anchor edges).
+const GROUP_MAP_EXPAND_MAX_USERS: usize = 120;
+/// Cap total extra groups discovered at depth ≥ 2 (besides the anchor).
+const GROUP_MAP_MAX_EXPAND_OTHER_CHATS: usize = 48;
+
+async fn build_group_map(
+    base_dir: &Path,
+    client_slot: &Arc<Mutex<Option<Client>>>,
+    result_tx: &mpsc::Sender<UserEvent>,
+    lookup_mode: i32,
+    query: String,
+    depth: u32,
+) -> OpResult {
+    let client = take_client(client_slot).await?;
+
+    let me = client
+        .get_me()
+        .await
+        .map_err(|e| UserEvent::err(ErrorKind::Generic, format!("group map get_me: {e}")))?;
+    let self_id = me.id();
+    let self_name = me.full_name();
+
+    let depth = depth.max(1).min(5);
+
+    let mut errors: Vec<String> = Vec::new();
+    let mut dialogs_scanned: usize = 0;
+
+    send_group_map_progress(result_tx, "resolving anchor…", 0, 0, 0).await;
+
+    let (mut anchor_chat, mut anchor_label, d_pre) =
+        resolve_group_map_anchor_chat(&client, base_dir, lookup_mode, &query).await?;
+    dialogs_scanned = dialogs_scanned.saturating_add(d_pre);
+
+    // If the user picked a person (or phone lookup resolved to a user), pick one supergroup/megagroup from common chats.
+    if let Chat::User(ref u) = anchor_chat {
+        let commons = fetch_common_chats(&client, u).await;
+        let mut candidates: Vec<Chat> = Vec::new();
+        for s in commons {
+            let Ok(packed) = PackedChat::from_hex(s.packed_hex.trim()) else {
+                continue;
+            };
+            let Ok(ch) = fetch_chat_by_packed(&client, packed).await else {
+                continue;
+            };
+            if is_group_or_megagroup_chat(&ch) {
+                candidates.push(ch);
+            }
+        }
+        candidates.sort_by(|a, b| chat_title_for_anchor(a).cmp(&chat_title_for_anchor(b)));
+        let Some(ch) = candidates.into_iter().next() else {
+            return Err(UserEvent::err(
+                ErrorKind::Generic,
+                "group map: no supergroup/megagroup in common chats with this user — open a shared group in Telegram first or enter a group/channel directly",
+            ));
+        };
+        anchor_label = format!("{} → {}", u.full_name(), chat_title_for_anchor(&ch));
+        anchor_chat = ch;
+    }
+
+    if !is_group_or_megagroup_chat(&anchor_chat) {
+        return Err(UserEvent::err(
+            ErrorKind::Generic,
+            "group map: anchor must be a supergroup or megagroup channel (not a broadcast-only channel)",
+        ));
+    }
+
+    let anchor_packed = anchor_chat.pack();
+    let anchor_graph_id = telegram_display_id(&anchor_chat);
+    let anchor_title = chat_title_for_anchor(&anchor_chat);
+
+    let mut chat_titles: HashMap<i64, String> = HashMap::new();
+    chat_titles.insert(anchor_graph_id, anchor_title.clone());
+
+    let mut user_labels: HashMap<i64, String> = HashMap::new();
+    user_labels.insert(self_id, self_name.clone());
+
+    let mut participants: Vec<User> = Vec::new();
+    let mut edge_keys: HashSet<(i64, i64)> = HashSet::new();
+    let mut edges: Vec<GroupMapEdge> = Vec::new();
+
+    send_group_map_progress(
+        result_tx,
+        &format!("participants: {anchor_title}"),
+        dialogs_scanned,
+        0,
+        0,
+    )
+    .await;
+
+    let mut p_iter = client.iter_participants(anchor_packed);
+    let mut count = 0usize;
+    loop {
+        let next = match tokio::time::timeout(GROUP_MAP_PARTICIPANT_ITER_TIMEOUT, p_iter.next()).await
+        {
+            Ok(r) => r,
+            Err(_) => {
+                errors.push(format!(
+                    "{anchor_title}: listing participants timed out after {}s (network or Telegram stalled)",
+                    GROUP_MAP_PARTICIPANT_ITER_TIMEOUT.as_secs()
+                ));
+                break;
+            }
+        };
+        let next = match next {
+            Ok(n) => n,
+            Err(e) => {
+                if let Some(secs) = flood_wait_seconds(&e) {
+                    let _ = send_group_map_progress(
+                        result_tx,
+                        &format!("FloodWait {secs}s — {anchor_title}"),
+                        dialogs_scanned,
+                        0,
+                        user_labels.len(),
+                    )
+                    .await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64 + 1)).await;
+                    continue;
+                }
+                errors.push(format!("{anchor_title}: {e}"));
+                break;
+            }
+        };
+        let Some(part) = next else { break };
+        let u = part.user;
+        if u.is_bot() {
+            continue;
+        }
+        let uid = u.id();
+        let label = u.full_name();
+        user_labels.insert(uid, label);
+        participants.push(u);
+        if edge_keys.insert((uid, anchor_graph_id)) {
+            edges.push(GroupMapEdge {
+                user_id: uid,
+                chat_id: anchor_graph_id,
+            });
+        }
+        count += 1;
+        if count >= GROUP_MAP_MAX_PARTICIPANTS_PER_CHAT {
+            break;
+        }
+        if count % 40 == 0 {
+            let _ = send_group_map_progress(
+                result_tx,
+                &format!("{anchor_title} ({count})"),
+                dialogs_scanned,
+                0,
+                user_labels.len(),
+            )
+            .await;
+        }
+    }
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(GROUP_MAP_API_DELAY_MS)).await;
+
+    let mut group_ids: HashSet<i64> = HashSet::new();
+    group_ids.insert(anchor_graph_id);
+
+    let mut groups_processed: usize = 1;
+
+    if depth >= 2 {
+        let max_users = participants.len().min(GROUP_MAP_EXPAND_MAX_USERS);
+        let mut extra_added: usize = 0;
+        for u in participants.iter().take(max_users) {
+            if extra_added >= GROUP_MAP_MAX_EXPAND_OTHER_CHATS {
+                break;
+            }
+            send_group_map_progress(
+                result_tx,
+                &format!("common chats: {}", u.full_name()),
+                dialogs_scanned,
+                groups_processed,
+                user_labels.len(),
+            )
+            .await;
+
+            let commons = fetch_common_chats(&client, u).await;
+            let mut added_for_user = 0usize;
+            for s in commons {
+                if extra_added >= GROUP_MAP_MAX_EXPAND_OTHER_CHATS {
+                    break;
+                }
+                if added_for_user >= GROUP_MAP_EXPAND_MAX_CHATS_PER_USER {
+                    break;
+                }
+                let Ok(packed) = PackedChat::from_hex(s.packed_hex.trim()) else {
+                    continue;
+                };
+                let Ok(ch) = fetch_chat_by_packed(&client, packed).await else {
+                    continue;
+                };
+                if !is_group_or_megagroup_chat(&ch) {
+                    continue;
+                }
+                let gid = telegram_display_id(&ch);
+                if gid == anchor_graph_id {
+                    continue;
+                }
+                if group_ids.contains(&gid) {
+                    continue;
+                }
+                group_ids.insert(gid);
+                chat_titles
+                    .entry(gid)
+                    .or_insert_with(|| chat_title_for_anchor(&ch));
+                if edge_keys.insert((u.id(), gid)) {
+                    edges.push(GroupMapEdge {
+                        user_id: u.id(),
+                        chat_id: gid,
+                    });
+                }
+                extra_added += 1;
+                added_for_user += 1;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(GROUP_MAP_API_DELAY_MS)).await;
+        }
+
+        // Fetch participants for discovered groups (so users who share a group but were not in anchor list still appear).
+        let to_scan: Vec<i64> = group_ids
+            .iter()
+            .copied()
+            .filter(|&g| g != anchor_graph_id)
+            .collect();
+        for gid in to_scan {
+            let Some(packed) = packed_from_numeric_id(gid) else {
+                continue;
+            };
+            let packed = if packed_needs_access_hash(&packed) && usable_access_hash(packed.access_hash).is_none()
+            {
+                match packed_from_dialogs(&client, gid).await {
+                    Some(p) => p,
+                    None => {
+                        errors.push(format!("group map: skip chat {gid} (need access hash / not in dialogs)"));
+                        continue;
+                    }
+                }
+            } else {
+                packed
+            };
+            if packed_needs_access_hash(&packed) && usable_access_hash(packed.access_hash).is_none() {
+                errors.push(format!("group map: skip chat {gid} (no access hash)"));
+                continue;
+            }
+
+            let title = chat_titles.get(&gid).cloned().unwrap_or_else(|| format!("chat {gid}"));
+            send_group_map_progress(
+                result_tx,
+                &format!("participants: {title}"),
+                dialogs_scanned,
+                groups_processed,
+                user_labels.len(),
+            )
+            .await;
+
+            let mut inner = client.iter_participants(packed);
+            let mut inner_n = 0usize;
+            loop {
+                let next = match tokio::time::timeout(GROUP_MAP_PARTICIPANT_ITER_TIMEOUT, inner.next())
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(_) => {
+                        errors.push(format!(
+                            "{title}: listing participants timed out after {}s",
+                            GROUP_MAP_PARTICIPANT_ITER_TIMEOUT.as_secs()
+                        ));
+                        break;
+                    }
+                };
+                let next = match next {
+                    Ok(n) => n,
+                    Err(e) => {
+                        if let Some(secs) = flood_wait_seconds(&e) {
+                            let _ = send_group_map_progress(
+                                result_tx,
+                                &format!("FloodWait {secs}s — {title}"),
+                                dialogs_scanned,
+                                groups_processed,
+                                user_labels.len(),
+                            )
+                            .await;
+                            tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64 + 1)).await;
+                            continue;
+                        }
+                        errors.push(format!("{title}: {e}"));
+                        break;
+                    }
+                };
+                let Some(part) = next else { break };
+                let u = part.user;
+                if u.is_bot() {
+                    continue;
+                }
+                let uid = u.id();
+                user_labels.insert(uid, u.full_name());
+                if edge_keys.insert((uid, gid)) {
+                    edges.push(GroupMapEdge {
+                        user_id: uid,
+                        chat_id: gid,
+                    });
+                }
+                inner_n += 1;
+                if inner_n >= GROUP_MAP_MAX_PARTICIPANTS_PER_CHAT {
+                    break;
+                }
+            }
+            groups_processed += 1;
+            tokio::time::sleep(tokio::time::Duration::from_millis(GROUP_MAP_API_DELAY_MS)).await;
+        }
+    }
+
+    let mut nodes: Vec<GroupMapNode> = Vec::new();
+    nodes.push(GroupMapNode {
+        id: self_id,
+        label: self_name,
+        kind: 0,
+    });
+    for (&uid, name) in &user_labels {
+        if uid == self_id {
+            continue;
+        }
+        nodes.push(GroupMapNode {
+            id: uid,
+            label: name.clone(),
+            kind: 1,
+        });
+    }
+    for &cid in &group_ids {
+        let label = chat_titles
+            .get(&cid)
+            .cloned()
+            .unwrap_or_else(|| format!("chat {cid}"));
+        nodes.push(GroupMapNode {
+            id: cid,
+            label,
+            kind: 2,
+        });
+    }
+
+    let users_found = user_labels.len();
+
+    Ok(UserEvent::GroupMapReady(GroupMapReady {
+        nodes,
+        edges,
+        anchor_label,
+        depth,
+        dialogs_scanned,
+        groups_processed,
+        users_found,
+        errors,
+    }))
+}
 
 fn flood_wait_seconds(err: &InvocationError) -> Option<u32> {
     let InvocationError::Rpc(rpc) = err else {

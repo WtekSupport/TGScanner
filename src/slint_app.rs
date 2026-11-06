@@ -1,9 +1,10 @@
 use crate::browser::URL_MY_TELEGRAM_APPS;
 use crate::config::{AppConfig, ConfigLoadResult};
+use crate::group_map_model;
 use crate::i18n::{self, workdir_line, Lang, I18nKey};
 use crate::profile_model;
 use crate::telegram::{TelegramHandle, WorkerCommand};
-use crate::user_event::{ErrorKind, UserEvent};
+use crate::user_event::{ErrorKind, GroupMapReady, UserEvent};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel, Weak};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -17,10 +18,12 @@ struct SharedState {
     telegram: TelegramHandle,
     result_rx: RefCell<mpsc::Receiver<UserEvent>>,
     busy: Cell<bool>,
+    group_map_building: Cell<bool>,
     lang: Cell<Lang>,
     disclaimer_version: Cell<u32>,
     pending_phone_lookup: Cell<Option<String>>,
     profile_card: RefCell<Option<Weak<ProfileCardWindow>>>,
+    group_map: RefCell<Option<Weak<GroupMapWindow>>>,
 }
 
 pub fn run(
@@ -42,10 +45,12 @@ pub fn run(
         telegram,
         result_rx: RefCell::new(result_rx),
         busy: Cell::new(false),
+        group_map_building: Cell::new(false),
         lang: Cell::new(lang),
         disclaimer_version: Cell::new(config.disclaimer_version),
         pending_phone_lookup: Cell::new(None),
         profile_card: RefCell::new(None),
+        group_map: RefCell::new(None),
     });
 
     let workdir = base_dir.display().to_string();
@@ -146,6 +151,8 @@ fn apply_main_strings(ui: &MainWindow, lang: Lang, workdir: &str, config: &AppCo
     ui.set_btn_password(i18n::t(lang, I18nKey::BtnSendPassword).into());
     ui.set_lbl_mode(i18n::t(lang, I18nKey::Mode).into());
     ui.set_lbl_query(i18n::t(lang, I18nKey::Query).into());
+    ui.set_lbl_group_map_depth(i18n::t(lang, I18nKey::LblGroupMapDepth).into());
+    ui.set_hint_group_map_depth(i18n::t(lang, I18nKey::HintGroupMapDepth).into());
     ui.set_phone_confirm_label(i18n::t(lang, I18nKey::PhoneConfirm).into());
     ui.set_phone_risk_label(i18n::t(lang, I18nKey::PhoneRisk).into());
     ui.set_btn_lookup(i18n::t(lang, I18nKey::BtnLookup).into());
@@ -163,6 +170,7 @@ fn apply_main_strings(ui: &MainWindow, lang: Lang, workdir: &str, config: &AppCo
     ui.set_busy_label(i18n::t(lang, I18nKey::PreloaderWorking).into());
     ui.set_lookup_modes(lookup_modes_model(lang));
     ui.set_language_options(language_model(lang));
+    ui.set_btn_group_map(i18n::t(lang, I18nKey::BtnGroupMap).into());
     ui.set_phone_dialog_title(i18n::t(lang, I18nKey::PhoneDialogTitle).into());
     ui.set_phone_dialog_body(i18n::t(lang, I18nKey::PhoneDialogBody).into());
     ui.set_phone_dialog_ok(i18n::t(lang, I18nKey::DialogOk).into());
@@ -173,6 +181,9 @@ fn apply_main_strings(ui: &MainWindow, lang: Lang, workdir: &str, config: &AppCo
     ui.set_phone(config.phone.clone().into());
     ui.set_output_dir(config.output_dir.clone().into());
     ui.set_language_index(if lang == Lang::Ru { 1 } else { 0 });
+    if ui.get_group_map_depth_text().trim().is_empty() {
+        ui.set_group_map_depth_text("1".into());
+    }
 }
 
 fn lookup_modes_model(lang: Lang) -> ModelRc<SharedString> {
@@ -358,7 +369,11 @@ fn wire_callbacks(ui: &MainWindow, shared: Rc<SharedState>, workdir: String) {
                 append_log(&ui, &format!("{e:#}"));
             }
             apply_main_strings(&ui, lang, &workdir, &cfg);
-            ui.set_busy_label(i18n::t(lang, I18nKey::PreloaderWorking).into());
+            if s.busy.get() && s.group_map_building.get() {
+                ui.set_busy_label(i18n::t(lang, I18nKey::BusyGroupMap).into());
+            } else {
+                ui.set_busy_label(i18n::t(lang, I18nKey::PreloaderWorking).into());
+            }
         }
     });
 
@@ -370,6 +385,45 @@ fn wire_callbacks(ui: &MainWindow, shared: Rc<SharedState>, workdir: String) {
                 ui.set_phone_confirm(false);
                 ui.set_phone_risk(false);
             }
+        }
+    });
+
+    let s = shared.clone();
+    let ui_w = ui.as_weak();
+    ui.on_group_map_clicked(move || {
+        if let Some(ui) = ui_w.upgrade() {
+            let lang = s.lang.get();
+            let trimmed = ui.get_lookup_query().trim().to_string();
+            if trimmed.is_empty() {
+                append_log(&ui, i18n::t(lang, I18nKey::EmptyLookup));
+                return;
+            }
+            let depth_s = ui.get_group_map_depth_text().trim().to_string();
+            if depth_s.is_empty() {
+                append_log(&ui, i18n::t(lang, I18nKey::GroupMapEmptyDepth));
+                return;
+            }
+            let depth: u32 = match depth_s.parse() {
+                Ok(d) if (1..=5).contains(&d) => d,
+                _ => {
+                    append_log(&ui, i18n::t(lang, I18nKey::ErrGroupMapDepthNaN));
+                    return;
+                }
+            };
+            if ui.get_lookup_mode_index() == 2 && (!ui.get_phone_confirm() || !ui.get_phone_risk()) {
+                append_log(&ui, i18n::t(lang, I18nKey::PhoneCheckboxes));
+                return;
+            }
+            append_log(&ui, i18n::t(lang, I18nKey::GroupMapStarted));
+            send_cmd(
+                &s,
+                &ui,
+                WorkerCommand::BuildGroupMap {
+                    lookup_mode: ui.get_lookup_mode_index(),
+                    query: trimmed,
+                    depth,
+                },
+            );
         }
     });
 }
@@ -427,11 +481,48 @@ fn send_cmd(state: &SharedState, ui: &MainWindow, cmd: WorkerCommand) {
     }
     state.busy.set(true);
     ui.set_busy(true);
+    let is_group_map = matches!(cmd, WorkerCommand::BuildGroupMap { .. });
+    state.group_map_building.set(is_group_map);
+    ui.set_busy_label(
+        i18n::t(
+            lang,
+            if is_group_map {
+                I18nKey::BusyGroupMap
+            } else {
+                I18nKey::PreloaderWorking
+            },
+        )
+        .into(),
+    );
     if state.telegram.tx.try_send(cmd).is_err() {
         append_log(ui, i18n::t(lang, I18nKey::WorkerSendFailed));
         state.busy.set(false);
+        state.group_map_building.set(false);
         ui.set_busy(false);
     }
+}
+
+fn open_or_refresh_group_map(state: &SharedState, lang: Lang, data: &GroupMapReady) {
+    if let Some(w) = state
+        .group_map
+        .borrow()
+        .as_ref()
+        .and_then(|weak| weak.upgrade())
+    {
+        group_map_model::populate(&w, lang, data);
+        return;
+    }
+    let win = GroupMapWindow::new().expect("group map window");
+    group_map_model::apply_strings(&win, lang);
+    group_map_model::populate(&win, lang, data);
+    *state.group_map.borrow_mut() = Some(win.as_weak());
+    let weak = win.as_weak();
+    win.on_close_window(move || {
+        if let Some(w) = weak.upgrade() {
+            let _ = w.hide();
+        }
+    });
+    let _ = win.show();
 }
 
 fn poll_worker(ui: &MainWindow, state: Rc<SharedState>) {
@@ -489,14 +580,38 @@ fn poll_worker(ui: &MainWindow, state: Rc<SharedState>) {
                     open_profile_card_for_user(ui, state.clone(), lang, p);
                 }
             }
+            UserEvent::GroupMapReady(m) => {
+                open_or_refresh_group_map(state.as_ref(), lang, m);
+            }
+            UserEvent::GroupMapProgress {
+                message,
+                dialogs_scanned,
+                groups_done,
+                users_seen,
+            } => {
+                // Mirror progress in the journal so a long scan is visibly alive (overlay stays up).
+                append_log(
+                    ui,
+                    &i18n::format_group_map_progress_journal(
+                        lang,
+                        message,
+                        *dialogs_scanned,
+                        *groups_done,
+                        *users_seen,
+                    ),
+                );
+                continue;
+            }
             _ => {}
         }
         append_log(ui, &i18n::format_event(lang, &ev).as_str());
         if !matches!(
             ev,
-            UserEvent::DeleteMessagesProgress { .. }
+            UserEvent::DeleteMessagesProgress { .. } | UserEvent::GroupMapProgress { .. }
         ) {
             state.busy.set(false);
+            state.group_map_building.set(false);
+            ui.set_busy_label(i18n::t(lang, I18nKey::PreloaderWorking).into());
         }
     }
     if !state.busy.get() {

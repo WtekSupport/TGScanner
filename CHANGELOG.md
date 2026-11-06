@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 **Release numbering starts at [1.0.1]** — the first published baseline; later entries are added above this section.
 
-## [1.2.0] - 2026-11-05
+## [1.3.0] - 2025-11-06
+
+### Added
+
+- **Group map** (Lookup tab): focused graph around a **Lookup target** (username, numeric ID, or `t.me/...` URL) and **depth 1–5**. Depth 1 loads the anchor supergroup/megagroup and its participant edges; depth ≥ 2 also pulls more shared supergroups from participants (API- and rate-limited). If the target is a **user**, the first shared supergroup/megagroup from common chats is used as the anchor (join that group first if empty). Opens in a separate window with progress in the journal.
+
+### Changed
+
+- Group map window: pan with left-button drag and zoom with the mouse wheel.
+- Group map: layout canvas can grow much taller for large graphs (was capped too low, which squashed ~1000+ nodes so zoom could not separate labels); slightly larger minimum vertical spacing; shorter automatic label truncation above ~800 nodes; zoom hint documents 0.08×–14×.
+- Group map: fix edge rendering — `Path` now uses an explicit viewbox matching the graph canvas so strokes align with node positions (Slint’s default `contain` scaling was wrong when the path bbox was smaller than the full layout).
+- Group map: draw node markers exactly at layout coordinates; labels sit beside the dot (not centered in a wide row) so edges visibly meet the circles.
+- Group map: larger result channel so progress messages cannot block the worker; timeout on listing participants if Telegram stalls; progress lines copied to the journal; log line when starting a build.
+
+## [1.2.0] - 2025-11-05
 
 ### Added
 
@@ -17,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Profile card: delete confirmation uses in-window modal overlay (Slint `Dialog` broke layout on the separate profile window).
 
-## [1.1.0] - 2026-11-04
+## [1.1.0] - 2025-11-04
 
 ### Changed
 
@@ -38,10 +52,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Slint layout: word wrap in disclaimer and lookup checkboxes, tab area height, busy overlay, compact profile card.
 - Connection tab: masked API hash and 2FA fields; connect button on the phone row; removed numbered step hints.
 
+[1.3.0]: https://github.com/WtekSupport/TGScanner/releases/tag/v1.3.0
 [1.2.0]: https://github.com/WtekSupport/TGScanner/releases/tag/v1.2.0
 [1.1.0]: https://github.com/WtekSupport/TGScanner/releases/tag/v1.1.0
 
-## [1.0.1] - 2026-11-04
+## [1.0.1] - 2025-11-04
 
 First **1.x** release: desktop feature set, Telegram-style UI, safer ID lookup, and crash diagnostics.
 

@@ -57,9 +57,12 @@ export component MainWindow inherits Window {
     in-out property <string> btn-password;
     in-out property <string> lbl-mode;
     in-out property <string> lbl-query;
+    in-out property <string> lbl-group-map-depth;
+    in-out property <string> hint-group-map-depth;
     in-out property <string> phone-confirm-label;
     in-out property <string> phone-risk-label;
     in-out property <string> btn-lookup;
+    in-out property <string> btn-group-map;
     in-out property <string> lbl-output;
     in-out property <string> btn-save;
     in-out property <string> lbl-language;
@@ -82,6 +85,8 @@ export component MainWindow inherits Window {
     in-out property <string> password;
     in-out property <int> lookup-mode-index;
     in-out property <string> lookup-query;
+    /// Depth for group map (1–5), digits as text.
+    in-out property <string> group-map-depth-text;
     in-out property <bool> phone-confirm;
     in-out property <bool> phone-risk;
     in-out property <string> output-dir;
@@ -105,6 +110,7 @@ export component MainWindow inherits Window {
     callback save-clicked();
     callback language-changed(int);
     callback lookup-mode-changed(int);
+    callback group-map-clicked();
     callback phone-dialog-result(bool);
 
     title: root.window-title;
@@ -210,6 +216,19 @@ export component MainWindow inherits Window {
                                 FormLabel { width: 112px; text: root.lbl-query; }
                                 CompactLineEdit { text <=> root.lookup-query; horizontal-stretch: 1; }
                             }
+                            FormRow {
+                                FormLabel { width: 112px; text: root.lbl-group-map-depth; }
+                                CompactLineEdit {
+                                    text <=> root.group-map-depth-text;
+                                    horizontal-stretch: 1;
+                                    max-width: 120px;
+                                }
+                            }
+                            WrappingText {
+                                body: root.hint-group-map-depth;
+                                text-color: TelegramTheme.muted;
+                                text-size: 10px;
+                            }
                             WrapCheckBox {
                                 checked <=> root.phone-confirm;
                                 label: root.phone-confirm-label;
@@ -220,11 +239,21 @@ export component MainWindow inherits Window {
                                 label: root.phone-risk-label;
                                 enabled: root.phone-mode-active && root.lookup-enabled;
                             }
-                            PrimaryButton {
-                                text: root.btn-lookup;
-                                width: 280px;
-                                enabled: root.lookup-enabled;
-                                clicked => { root.lookup-clicked(); }
+                            HorizontalBox {
+                                spacing: 8px;
+                                PrimaryButton {
+                                    text: root.btn-lookup;
+                                    min-width: 220px;
+                                    horizontal-stretch: 1;
+                                    enabled: root.lookup-enabled;
+                                    clicked => { root.lookup-clicked(); }
+                                }
+                                SecondaryButton {
+                                    text: root.btn-group-map;
+                                    min-width: 180px;
+                                    enabled: root.lookup-enabled && !root.busy;
+                                    clicked => { root.group-map-clicked(); }
+                                }
                             }
                         }
                     }
