@@ -23,7 +23,7 @@ grammers-tl-types = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time"] }
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 rand = "0.8"
 keyring = "3"
 sha2 = "0.10"
